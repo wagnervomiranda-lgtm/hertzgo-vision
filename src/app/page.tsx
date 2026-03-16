@@ -1306,6 +1306,25 @@ function TabConfig({ appState, onSave }: { appState: AppState; onSave: (partial:
     ["cupom_vip", "🎟️ Cupom VIP"],
   ];
 
+  const testarZapi = async () => {
+    setZapiTesting(true); setZapiTestResult("");
+    try {
+      const r = await fetch("/api/zapi");
+      const d = await r.json();
+      setZapiTestResult(d.connected ? "✅ Conectada e funcionando" : d.configured ? "⚠️ Configurada mas desconectada" : "❌ Não configurada");
+    } catch { setZapiTestResult("❌ Erro de conexão"); }
+    setZapiTesting(false);
+  };
+
+  const exportarBackup = () => {
+    const data = JSON.stringify(appState, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `hertzgo-backup-${new Date().toLocaleDateString("pt-BR").replace(/\//g, "-")}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{ padding: "24px 28px" }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
