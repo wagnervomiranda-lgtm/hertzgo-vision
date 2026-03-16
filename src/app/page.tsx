@@ -1225,6 +1225,31 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
   const users=useMemo(()=>classificarUsuarios(ok),[ok]);
   const[zapiStatus,setZapiStatus]=useState<"unknown"|"ok"|"err">("unknown");
+  const[respostas,setRespostas]=useState<{id:string;telefone:string;mensagem:string;resposta:string|null;criado_em:string}[]>([]);
+  const[loadingResp,setLoadingResp]=useState(false);
+  const buscarRespostas=async()=>{
+    const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if(!url||!key)return;
+    setLoadingResp(true);
+    try{
+      const res=await fetch(`${url}/rest/v1/webhook_respostas?order=criado_em.desc&limit=50`,{
+        headers:{apikey:key,Authorization:`Bearer ${key}`}
+      });
+      if(res.ok){const data=await res.json();setRespostas(data);}
+    }catch(e){console.error(e);}
+    setLoadingResp(false);
+  };
+  const marcarProcessado=async(id:string)=>{
+    const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if(!url||!key)return;
+    await fetch(`${url}/rest/v1/webhook_respostas?id=eq.${id}`,{
+      method:"PATCH",headers:{apikey:key,Authorization:`Bearer ${key}`,"Content-Type":"application/json"},
+      body:JSON.stringify({processado:true})
+    });
+    setRespostas(r=>r.filter(x=>x.id!==id));
+  };
   const[sending,setSending]=useState<Record<string,boolean>>({});
   const[localDisparos,setLocalDisparos]=useState(appState.disparos);
   const[expandedSection,setExpandedSection]=useState<string|null>("msg1");
@@ -1294,6 +1319,52 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
 
   return(
     <div style={{padding:"24px 28px"}}>
+      {/* PAINEL RESPOSTAS Z-API */}
+      <div style={{marginBottom:24}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:2}}>Webhook Z-API</div>
+            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text}}>📨 Respostas Recebidas</div>
+          </div>
+          <button onClick={buscarRespostas} disabled={loadingResp} style={{padding:"7px 16px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:`1px solid ${T.green}40`,background:`${T.green}10`,color:T.green}}>
+            {loadingResp?"⏳ Buscando...":"🔄 Buscar Respostas"}
+          </button>
+        </div>
+        {respostas.length>0?(
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontFamily:T.mono,fontSize:11}}>
+              <thead><tr style={{background:T.bg3}}>
+                <th style={{padding:"8px 14px",textAlign:"left",color:T.text3,fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase"}}>Telefone</th>
+                <th style={{padding:"8px 14px",textAlign:"left",color:T.text3,fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase"}}>Mensagem</th>
+                <th style={{padding:"8px 14px",textAlign:"center",color:T.text3,fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase"}}>Resposta</th>
+                <th style={{padding:"8px 14px",textAlign:"left",color:T.text3,fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase"}}>Recebido</th>
+                <th style={{padding:"8px 14px",textAlign:"center",color:T.text3,fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase"}}>Ação</th>
+              </tr></thead>
+              <tbody>
+                {respostas.map(r=>(
+                  <tr key={r.id} style={{borderTop:`1px solid ${T.border}`}}>
+                    <td style={{padding:"10px 14px",color:T.text}}>{r.telefone}</td>
+                    <td style={{padding:"10px 14px",color:T.text2,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.mensagem}</td>
+                    <td style={{padding:"10px 14px",textAlign:"center"}}>
+                      {r.resposta==="1"?<span style={{background:"rgba(0,229,160,0.15)",color:T.green,padding:"2px 10px",borderRadius:6,fontSize:11}}>1 · Motorista</span>
+                      :r.resposta==="2"?<span style={{background:"rgba(255,171,0,0.15)",color:T.amber,padding:"2px 10px",borderRadius:6,fontSize:11}}>2 · Não motorista</span>
+                      :<span style={{color:T.text3}}>—</span>}
+                    </td>
+                    <td style={{padding:"10px 14px",color:T.text3}}>{new Date(r.criado_em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
+                    <td style={{padding:"10px 14px",textAlign:"center"}}>
+                      <button onClick={()=>marcarProcessado(r.id)} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",border:`1px solid ${T.border}`,background:"transparent",color:T.text3}}>✓ OK</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ):(
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px",textAlign:"center",fontFamily:T.mono,fontSize:11,color:T.text3}}>
+            Clique em "Buscar Respostas" para ver as mensagens recebidas via webhook Z-API
+          </div>
+        )}
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:28}}>
         <KpiCard label="Z-API Status" value={zapiStatus==="ok"?"✅ Conectada":zapiStatus==="err"?"⚠️ Verificar":"⏳ Testando"} sub="via API Route Vercel" accent={zapiStatus==="ok"?T.green:T.amber} small/>
         <KpiCard label="Fila Total" value={`${secoes.reduce((a,s)=>a+s.count,0)}`} sub="usuários elegíveis" accent={T.red} small/>
