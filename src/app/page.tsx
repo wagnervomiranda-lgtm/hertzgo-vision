@@ -21,14 +21,11 @@ function useFonts() {
 // ─── LOGO SVG ────────────────────────────────────────────────────────────────
 function HertzGoLogo({ size = 32 }: { size?: number }) {
   return (
-    <svg width={size * 3.2} height={size} viewBox="0 0 128 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <text x="0" y="32" fontFamily="Space Grotesk, sans-serif" fontWeight="700" fontSize="34" fill="#ffffff" letterSpacing="-1">Hertz</text>
-      <text x="76" y="32" fontFamily="Space Grotesk, sans-serif" fontWeight="700" fontSize="34" fill="#016070" letterSpacing="-1">G</text>
-      <text x="101" y="32" fontFamily="Space Grotesk, sans-serif" fontWeight="700" fontSize="34" fill="#016070" letterSpacing="-1">o</text>
-      <circle cx="113" cy="18" r="5" stroke="#016070" strokeWidth="2" fill="none"/>
-      <line x1="108" y1="18" x2="105" y2="18" stroke="#016070" strokeWidth="2" strokeLinecap="round"/>
-      <line x1="118" y1="18" x2="121" y2="18" stroke="#016070" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
+    <img
+      src="https://raw.githubusercontent.com/wagnervomiranda-lgtm/hertzgo-vision/main/Logo_Atual.jpeg"
+      alt="HertzGo"
+      style={{ height: size, width: "auto", objectFit: "contain", display: "block" }}
+    />
   );
 }
 
@@ -880,44 +877,53 @@ function TabUsuarios({sessions,appState}:{sessions:Session[];appState:AppState})
       {/* NOVOS USUÁRIOS */}
       {activeSection==="novos"&&(
         <>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24}}>
-            <KpiCard label="Novos na Rede" value={`${novosNaRede.length}`} sub={`1ª vez em qualquer estação HertzGo`} accent={T.teal}/>
-            <KpiCard label="Novos na Estação" value={`${novosNaEstacao.length}`} sub="já eram clientes, chegaram num novo ponto" accent={T.blue}/>
-          </div>
           <div style={{background:"rgba(1,96,112,0.08)",border:"1px solid rgba(1,96,112,0.25)",borderRadius:12,padding:"12px 16px",fontFamily:T.mono,fontSize:11,color:"#5eead4",marginBottom:20}}>
-            💡 Boas-vindas são enviadas <strong>apenas nas estações próprias</strong> (Park Way e Cidade do Automóvel). Estações de parceria e contratuais entram diretamente na qualificação (MSG 1).
+            💡 Boas-vindas apenas nas <strong>estações próprias</strong> (PW + CidAuto). Demais entram na fila MSG 1.
           </div>
-          <SectionLabel>🌱 Novos na Rede — Boas-vindas pendentes (estações próprias)</SectionLabel>
-          <Panel style={{padding:0,overflow:"hidden",marginBottom:24}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr><th style={TH}>Usuário</th><th style={TH}>Estação</th><th style={THR}>kWh</th><th style={THR}>Receita</th><th style={TH}>Telefone</th><th style={TH}>Ação</th></tr></thead>
-              <tbody>
-                {novosNaRede.length===0&&<tr><td colSpan={6} style={{...TD,textAlign:"center",color:T.text3,padding:"24px"}}>Nenhum usuário novo na rede no período</td></tr>}
-                {novosNaRede.map(u=>{
-                  const tel=getTel(u.user);
-                  const isPropria=ESTACAO_PROPRIA.includes(u.localFreqKey);
-                  return(<tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
-                    <td style={TD}><span style={{fontWeight:500}}>{trunc(u.user,20)}</span></td>
-                    <td style={TD}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:isPropria?"rgba(1,96,112,0.2)":"rgba(255,255,255,0.05)",color:isPropria?T.teal:T.text3,fontFamily:T.mono}}>{hubNome(u.localFreqKey)}</span></td>
-                    <td style={{...TDR,color:T.text2}}>{u.kwh.toFixed(1)}</td>
-                    <td style={{...TDR,color:T.green,fontWeight:600}}>{brl(u.rev)}</td>
-                    <td style={{...TD,fontSize:11,color:tel?T.green:T.text3}}>{tel||"—"}</td>
-                    <td style={TD}>{isPropria&&tel?<span style={{fontFamily:T.mono,fontSize:10,color:T.green}}>📤 Boas-vindas rede</span>:!isPropria?<span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>→ Fila MSG 1</span>:<span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>sem tel</span>}</td>
-                  </tr>);
-                })}
-              </tbody>
-            </table>
-          </Panel>
-          <SectionLabel>📍 Novos na Estação — clientes da rede em novo ponto</SectionLabel>
-          <Panel style={{padding:0,overflow:"hidden"}}>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr><th style={TH}>Usuário</th><th style={TH}>Nova Estação</th><th style={THR}>kWh</th><th style={TH}>Telefone</th></tr></thead>
-              <tbody>
-                {novosNaEstacao.length===0&&<tr><td colSpan={4} style={{...TD,textAlign:"center",color:T.text3,padding:"24px"}}>Nenhum cliente expandindo para nova estação no período</td></tr>}
-                {novosNaEstacao.map(u=>{const tel=getTel(u.user);return(<tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}><td style={TD}><span style={{fontWeight:500}}>{trunc(u.user,20)}</span></td><td style={TD}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(59,130,246,0.15)",color:T.blue,fontFamily:T.mono}}>{hubNome(u.localFreqKey)}</span></td><td style={{...TDR,color:T.text2}}>{u.kwh.toFixed(1)}</td><td style={{...TD,fontSize:11,color:tel?T.green:T.text3}}>{tel||"—"}</td></tr>);})}
-              </tbody>
-            </table>
-          </Panel>
+          {[
+            {label:"🌱 Novos na Rede",sub:"1ª vez em qualquer estação HertzGo",color:T.teal,lista:novosNaRede,tipo:"rede"},
+            {label:"📍 Novos na Estação",sub:"Já eram clientes, chegaram num novo ponto",color:T.blue,lista:novosNaEstacao,tipo:"estacao"},
+          ].map(grupo=>{
+            const[open,setOpen]=useState(false);
+            return(
+              <div key={grupo.tipo} style={{marginBottom:12,background:T.bg2,border:`1px solid ${open?grupo.color+"40":T.border}`,borderRadius:14,overflow:"hidden"}}>
+                <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div>
+                      <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text}}>{grupo.label}</div>
+                      <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{grupo.sub}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontFamily:T.mono,fontSize:11,padding:"3px 10px",borderRadius:20,background:`${grupo.color}20`,color:grupo.color,border:`1px solid ${grupo.color}40`}}>{grupo.lista.length} usuários</span>
+                    <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{open?"▲":"▼"}</span>
+                  </div>
+                </div>
+                {open&&(
+                  <div style={{borderTop:`1px solid ${T.border}`}}>
+                    <table style={{width:"100%",borderCollapse:"collapse"}}>
+                      <thead><tr><th style={TH}>Usuário</th><th style={TH}>Estação</th><th style={THR}>kWh</th><th style={THR}>Receita</th><th style={TH}>Telefone</th><th style={TH}>Ação</th></tr></thead>
+                      <tbody>
+                        {grupo.lista.length===0&&<tr><td colSpan={6} style={{...TD,textAlign:"center",color:T.text3,padding:"20px"}}>Nenhum usuário no período</td></tr>}
+                        {grupo.lista.map(u=>{
+                          const tel=getTel(u.user);
+                          const isPropria=ESTACAO_PROPRIA.includes(u.localFreqKey);
+                          return(<tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+                            <td style={TD}><span style={{fontWeight:500}}>{trunc(u.user,20)}</span></td>
+                            <td style={TD}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:isPropria?"rgba(1,96,112,0.2)":"rgba(255,255,255,0.05)",color:isPropria?T.teal:T.text3,fontFamily:T.mono}}>{hubNome(u.localFreqKey)}</span></td>
+                            <td style={{...TDR,color:T.text2}}>{u.kwh.toFixed(1)}</td>
+                            <td style={{...TDR,color:T.green,fontWeight:600}}>{brl(u.rev)}</td>
+                            <td style={{...TD,fontSize:11,color:tel?T.green:T.text3}}>{tel||"—"}</td>
+                            <td style={TD}>{grupo.tipo==="rede"&&isPropria&&tel?<span style={{fontFamily:T.mono,fontSize:10,color:T.green}}>📤 Boas-vindas rede</span>:!isPropria?<span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>→ MSG 1</span>:<span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>sem tel</span>}</td>
+                          </tr>);
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </>
       )}
 
@@ -931,31 +937,47 @@ function TabUsuarios({sessions,appState}:{sessions:Session[];appState:AppState})
               {[{status:"🟠 Em Risco",score:"26–50",acao:"AGIR AGORA — frequência caindo.",cor:"#fb923c"},{status:"🔴 Churn",score:"0–25",acao:"Última tentativa de resgate.",cor:T.red},{status:"🟡 Regular",score:"51–75",acao:"Monitorar. Enviar novidade.",cor:T.amber},{status:"🟢 VIP Ativo",score:"76–100",acao:"Reconhecer e fidelizar.",cor:T.green}].map((s,i)=>(<div key={i} style={{background:`${s.cor}08`,border:`1px solid ${s.cor}25`,borderRadius:10,padding:"10px 12px"}}><div style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:s.cor,marginBottom:4}}>{s.status}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:6}}>Score: {s.score}</div><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,lineHeight:1.5}}>{s.acao}</div></div>))}
             </div>
           </div>
-          <Panel>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:1,background:T.border,borderRadius:10,overflow:"hidden",marginBottom:14}}>
-              {[{label:"🟠 Em Risco",count:motoristas.filter(u=>vipScores[u.user]?.status==="em_risco").length,color:"#fb923c"},{label:"🔴 Churn",count:motoristas.filter(u=>vipScores[u.user]?.status==="churned").length,color:T.red},{label:"🟡 Regular",count:motoristas.filter(u=>vipScores[u.user]?.status==="regular").length,color:T.amber},{label:"🟢 VIP Ativo",count:motoristas.filter(u=>vipScores[u.user]?.status==="ativo").length,color:T.green}].map((s,i)=>(<div key={i} style={{background:T.bg2,padding:"12px 16px",textAlign:"center"}}><div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:6}}>{s.label}</div><div style={{fontFamily:T.sans,fontSize:24,fontWeight:700,color:s.color}}>{s.count}</div></div>))}
-            </div>
-            <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr><th style={TH}>Motorista</th><th style={TH}>Hub</th><th style={THR}>Score</th><th style={THR}>Freq/sem</th><th style={THR}>Dias s/ recarga</th><th style={TH}>Status</th><th style={TH}>Telefone</th></tr></thead>
-              <tbody>
-                {motoristasOrdenados.map(u=>{
-                  const v=vipScores[u.user];const tel=getTel(u.user);
-                  const sc=v?.status==="ativo"?T.green:v?.status==="regular"?T.amber:v?.status==="em_risco"?"#fb923c":T.red;
-                  const se=v?.status==="ativo"?"🟢":v?.status==="regular"?"🟡":v?.status==="em_risco"?"🟠":"🔴";
-                  const bg=v?.status==="em_risco"?"rgba(251,146,60,0.04)":v?.status==="churned"?"rgba(239,68,68,0.05)":"";
-                  return(<tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",background:bg}}>
-                    <td style={TD}><span style={{fontWeight:500}}>{trunc(u.user,20)}</span></td>
-                    <td style={{...TD,fontSize:11,color:T.text2}}>{hubNome(u.localFreqKey)}</td>
-                    <td style={TDR}><div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}><div style={{width:40,height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${v?.score||0}%`,background:sc,borderRadius:2}}/></div><span style={{color:sc,fontWeight:600,fontSize:11}}>{v?.score||0}</span></div></td>
-                    <td style={{...TDR,color:T.text2}}>{v?.freqAtual||0}x</td>
-                    <td style={{...TDR,color:v&&v.diasSemRecarga>14?T.red:v&&v.diasSemRecarga>7?T.amber:T.text2}}>{v?.diasSemRecarga||0}d</td>
-                    <td style={TD}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:`${sc}20`,color:sc,fontFamily:T.mono}}>{se} {v?.status||"—"}</span></td>
-                    <td style={{...TD,fontSize:11,color:tel?T.green:T.text3}}>{tel?`📞 ${tel}`:"—"}</td>
-                  </tr>);
-                })}
-              </tbody>
-            </table>
-          </Panel>
+          <div style={{display:"grid",gap:10}}>
+            {[{label:"🟠 Em Risco",status:"em_risco",color:"#fb923c"},{label:"🔴 Churn",status:"churned",color:T.red},{label:"🟡 Regular",status:"regular",color:T.amber},{label:"🟢 VIP Ativo",status:"ativo",color:T.green}].map(cat=>{
+              const lista=motoristasOrdenados.filter(u=>vipScores[u.user]?.status===cat.status);
+              const[open,setOpen]=useState(false);
+              return(
+                <div key={cat.status} style={{background:T.bg2,border:`1px solid ${open?cat.color+"50":T.border}`,borderRadius:12,overflow:"hidden",transition:"all 0.2s"}}>
+                  <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:36,height:36,borderRadius:"50%",background:`${cat.color}20`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <span style={{fontFamily:T.sans,fontSize:18,fontWeight:800,color:cat.color}}>{lista.length}</span>
+                      </div>
+                      <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:cat.color}}>{cat.label}</div>
+                    </div>
+                    <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{open?"▲":"▼ ver usuários"}</span>
+                  </div>
+                  {open&&lista.length>0&&(
+                    <div style={{borderTop:`1px solid ${T.border}`}}>
+                      <table style={{width:"100%",borderCollapse:"collapse"}}>
+                        <thead><tr><th style={TH}>Motorista</th><th style={TH}>Hub</th><th style={THR}>Score</th><th style={THR}>Freq/sem</th><th style={THR}>Dias s/ recarga</th><th style={TH}>Telefone</th></tr></thead>
+                        <tbody>
+                          {lista.map(u=>{
+                            const v=vipScores[u.user];const tel=getTel(u.user);
+                            const sc=cat.color;
+                            return(<tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+                              <td style={TD}><span style={{fontWeight:500}}>{trunc(u.user,20)}</span></td>
+                              <td style={{...TD,fontSize:11,color:T.text2}}>{hubNome(u.localFreqKey)}</td>
+                              <td style={TDR}><div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}><div style={{width:40,height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${v?.score||0}%`,background:sc,borderRadius:2}}/></div><span style={{color:sc,fontWeight:600,fontSize:11}}>{v?.score||0}</span></div></td>
+                              <td style={{...TDR,color:T.text2}}>{v?.freqAtual||0}x</td>
+                              <td style={{...TDR,color:v&&v.diasSemRecarga>14?T.red:v&&v.diasSemRecarga>7?T.amber:T.text2}}>{v?.diasSemRecarga||0}d</td>
+                              <td style={{...TD,fontSize:11,color:tel?T.green:T.text3}}>{tel?`📞 ${tel}`:"—"}</td>
+                            </tr>);
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {open&&lista.length===0&&<div style={{padding:"12px 16px",fontFamily:T.mono,fontSize:11,color:T.text3,borderTop:`1px solid ${T.border}`}}>Nenhum motorista nesta categoria</div>}
+                </div>
+              );
+            })}
+          </div>
         </>
       )}
 
@@ -1206,13 +1228,14 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
     setSending(p=>({...p,[`${user}_${msgId}`]:false}));
   };
 
-  const[selecionados,setSelecionados]=useState<Record<string,Set<string>>>({});
-  const toggleSel=(section:string,user:string)=>setSelecionados(p=>{const s=new Set(p[section]||[]);s.has(user)?s.delete(user):s.add(user);return{...p,[section]:s};});
-  const toggleTodos=(section:string,lista:UserData[])=>setSelecionados(p=>{const curr=p[section]||new Set();const comTel=lista.filter(u=>getTel(u.user)).map(u=>u.user);const updated=curr.size===comTel.length?new Set<string>():new Set(comTel);return{...p,[section]:updated};});
+  const[selecionados,setSelecionados]=useState<Record<string,string[]>>({});
+  const getSel=(section:string)=>new Set(selecionados[section]||[]);
+  const toggleSel=(section:string,user:string)=>setSelecionados(p=>{const s=new Set(p[section]||[]);s.has(user)?s.delete(user):s.add(user);return{...p,[section]:Array.from(s)};});
+  const toggleTodos=(section:string,lista:UserData[])=>setSelecionados(p=>{const curr=new Set(p[section]||[]);const comTel=lista.filter(u=>getTel(u.user)).map(u=>u.user);const updated=curr.size===comTel.length?new Set<string>():new Set(comTel);return{...p,[section]:Array.from(updated)};});
 
   const[enviandoLote,setEnviandoLote]=useState<Record<string,boolean>>({});
   const enviarLote=async(section:string,lista:UserData[],msgId:string,template:string,cupom:string="")=>{
-    const sel=selecionados[section]||new Set();
+    const sel=getSel(section);
     const elegíveis=lista.filter(u=>sel.has(u.user)&&getTel(u.user));
     if(!elegíveis.length){alert("Nenhum selecionado com telefone.");return;}
     if(!confirm(`Disparar para ${elegíveis.length} usuários? Delay de 3s entre envios.`))return;
@@ -1250,7 +1273,7 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
 
       {secoes.map(sec=>{
         const isOpen=expandedSection===sec.id;
-        const sel=selecionados[sec.id]||new Set();
+        const sel=getSel(sec.id);
         const comTel=sec.lista.filter(u=>getTel(u.user));
         const template=getMsgTemplate(sec.msgKey);
         const cupom=sec.cupomKey?getMsgTemplate(sec.cupomKey):"";
@@ -1459,7 +1482,7 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
           <Panel style={{marginBottom:16}}>
             <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,marginBottom:14}}>➕ Adicionar Cupom Manual</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
-              {[{id:"usuario",label:"Usuário"},{id:"motivo",label:"Motivo"},{id:"validade",label:"Validade (ex: 2026-06-30)"},{id:"estacao",label:"Estação"}].map(f=>(<div key={f.id}><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:4}}>{f.label}</div><input value={novoCupom[f.id as keyof CupomRegistro]} onChange={e=>setNovoCupom(p=>({...p,[f.id]:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"6px 8px",borderRadius:8,fontSize:12,fontFamily:T.mono}}/></div>))}
+              {[{id:"usuario",label:"Usuário"},{id:"motivo",label:"Motivo"},{id:"validade",label:"Validade (ex: 2026-06-30)"},{id:"estacao",label:"Estação"}].map(f=>(<div key={f.id}><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:4}}>{f.label}</div><input value={(novoCupom as Record<string,string>)[f.id]} onChange={e=>setNovoCupom(p=>({...p,[f.id]:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"6px 8px",borderRadius:8,fontSize:12,fontFamily:T.mono}}/></div>))}
             </div>
             <button onClick={()=>{if(!novoCupom.usuario)return;const updated=[...cupons,novoCupom];setCupons(updated);onSave({cupons:updated});setNovoCupom({usuario:"",motivo:"",validade:"",estacao:""});setCupomSaved(true);setTimeout(()=>setCupomSaved(false),1500);}} style={{background:cupomSaved?"rgba(0,229,160,0.2)":T.greenDim,border:`1px solid ${cupomSaved?T.green:"rgba(0,229,160,0.3)"}`,color:T.green,padding:"7px 18px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:T.mono}}>{cupomSaved?"✅ Adicionado!":"➕ Adicionar"}</button>
           </Panel>
