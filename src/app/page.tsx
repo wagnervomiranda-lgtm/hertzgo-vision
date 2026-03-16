@@ -1436,7 +1436,7 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
         const json=JSON.parse(e.target?.result as string) as AppState;
         // Validar que é um backup HertzGo
         if(!json.mensagens&&!json.dreConfigs&&!json.contatos)throw new Error("Arquivo não parece ser um backup HertzGo");
-        savePartial(json);
+        onSave(json);
         setImportMsg({ok:true,text:"✅ Backup importado com sucesso!"});
         setTimeout(()=>setImportMsg(null),3000);
       }catch(err){
