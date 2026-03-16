@@ -20,17 +20,12 @@ function useFonts() {
 
 // ─── LOGO SVG ────────────────────────────────────────────────────────────────
 function HertzGoLogo({ size = 32 }: { size?: number }) {
-  const scale = size / 32;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: Math.round(2 * scale) }}>
-      <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: Math.round(22 * scale), color: "#ffffff", letterSpacing: "-0.04em", lineHeight: 1 }}>Hertz</span>
-      <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: Math.round(22 * scale), color: "#016070", letterSpacing: "-0.04em", lineHeight: 1 }}>Go</span>
-      <svg width={Math.round(14 * scale)} height={Math.round(14 * scale)} viewBox="0 0 14 14" fill="none" style={{ marginLeft: Math.round(1 * scale) }}>
-        <circle cx="7" cy="7" r="5.5" stroke="#016070" strokeWidth="1.5"/>
-        <line x1="1.5" y1="7" x2="0" y2="7" stroke="#016070" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1="12.5" y1="7" x2="14" y2="7" stroke="#016070" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    </div>
+    <img
+      src="https://raw.githubusercontent.com/wagnervomiranda-lgtm/hertzgo-vision/main/Logo%20Atual.jpeg"
+      alt="HertzGo"
+      style={{ height: size, width: "auto", objectFit: "contain", display: "block" }}
+    />
   );
 }
 
