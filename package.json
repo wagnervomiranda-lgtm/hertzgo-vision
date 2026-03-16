@@ -22,21 +22,3 @@
     "typescript": "^5"
   }
 }
-```
-
-Salva com **Cmd+S**.
-
----
-
-**Correção 2 — page.tsx**
-
-Abre o `page.tsx`, abre o Find/Replace (**F1** → digita `replace` → Enter).
-
-- **Buscar:**
-```
-const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs" as string) as any;
-```
-
-- **Substituir por:**
-```
-const XLSX = await import("xlsx");
