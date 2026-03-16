@@ -154,6 +154,129 @@ function dreSimples(anual: number): number {
   return 33.0;
 }
 
+// ─── ALERTAS ──────────────────────────────────────────────────────────────────
+interface Alerta {
+  tipo: "crit" | "warn" | "ok";
+  icon: string;
+  titulo: string;
+  desc: string;
+}
+
+function calcAlertas(sessions: Session[]): { semaforo: "verde"|"amarelo"|"vermelho"; alertas: Alerta[] } {
+  const ok = sessions.filter(s => !s.cancelled && s.energy > 0);
+  const cancelled = sessions.filter(s => s.cancelled);
+  if (!ok.length) return { semaforo: "vermelho", alertas: [] };
+
+  const days = new Set(ok.map(s => s.date.toDateString())).size || 1;
+  const totalRev = ok.reduce((a, s) => a + s.value, 0);
+  const totalKwh = ok.reduce((a, s) => a + s.energy, 0);
+  const avgSessDay = ok.length / days;
+  const avgRevDay = totalRev / days;
+  const avgKwhDay = totalKwh / days;
+  const cancelRate = sessions.length > 0 ? cancelled.length / sessions.length : 0;
+  const withOv = ok.filter(s => s.overstayMin !== null && s.overstayMin > 0);
+  const avgOv = withOv.length > 0 ? withOv.reduce((a, s) => a + (s.overstayMin||0), 0) / withOv.length : 0;
+  const ticket = ok.length > 0 ? totalRev / ok.length : 0;
+
+  const alertas: Alerta[] = [];
+
+  // Sessões/dia
+  if (avgSessDay >= 12) alertas.push({ tipo:"ok", icon:"✅", titulo:"Sessões no alvo", desc:`${avgSessDay.toFixed(1)} sess/dia — acima da meta de 12/dia` });
+  else if (avgSessDay >= 8) alertas.push({ tipo:"warn", icon:"⚠️", titulo:"Sessões abaixo da meta", desc:`${avgSessDay.toFixed(1)} sess/dia — meta é 12/dia` });
+  else alertas.push({ tipo:"crit", icon:"🔴", titulo:"Volume crítico de sessões", desc:`${avgSessDay.toFixed(1)} sess/dia — muito abaixo da meta` });
+
+  // Receita/dia
+  if (avgRevDay >= 350) alertas.push({ tipo:"ok", icon:"✅", titulo:"Receita no alvo", desc:`R$\u00a0${avgRevDay.toFixed(0)}/dia — acima da meta de R$\u00a0350` });
+  else if (avgRevDay >= 250) alertas.push({ tipo:"warn", icon:"⚠️", titulo:"Receita abaixo da meta", desc:`R$\u00a0${avgRevDay.toFixed(0)}/dia — meta é R$\u00a0350/dia` });
+  else alertas.push({ tipo:"crit", icon:"🔴", titulo:"Receita crítica", desc:`R$\u00a0${avgRevDay.toFixed(0)}/dia — investigar tarifação` });
+
+  // Cancelamentos
+  if (cancelRate <= 0.08) alertas.push({ tipo:"ok", icon:"✅", titulo:"Cancelamentos sob controle", desc:`${(cancelRate*100).toFixed(1)}% — dentro do limite de 8%` });
+  else if (cancelRate <= 0.15) alertas.push({ tipo:"warn", icon:"⚠️", titulo:"Cancelamentos elevados", desc:`${(cancelRate*100).toFixed(1)}% — acima de 8%, investigar` });
+  else alertas.push({ tipo:"crit", icon:"🔴", titulo:"Cancelamentos críticos", desc:`${(cancelRate*100).toFixed(1)}% — verificar OCPP e autenticação` });
+
+  // Overstay
+  if (avgOv === 0) alertas.push({ tipo:"ok", icon:"✅", titulo:"Sem overstay registrado", desc:"Nenhum veículo parado após fim da carga" });
+  else if (avgOv <= 5) alertas.push({ tipo:"ok", icon:"✅", titulo:"Overstay dentro do limite", desc:`Média de ${avgOv.toFixed(1)} min — abaixo de 5 min` });
+  else if (avgOv <= 15) alertas.push({ tipo:"warn", icon:"⚠️", titulo:"Overstay elevado", desc:`Média de ${avgOv.toFixed(1)} min — meta é < 5 min` });
+  else alertas.push({ tipo:"crit", icon:"🔴", titulo:"Overstay crítico", desc:`Média de ${avgOv.toFixed(1)} min — implementar taxa de ocupação` });
+
+  // kWh/dia
+  if (avgKwhDay < 100) alertas.push({ tipo:"crit", icon:"🔴", titulo:"Energia crítica", desc:`${avgKwhDay.toFixed(0)} kWh/dia — possível falha de equipamento` });
+  else if (avgKwhDay < 180) alertas.push({ tipo:"warn", icon:"⚠️", titulo:"Energia abaixo do esperado", desc:`${avgKwhDay.toFixed(0)} kWh/dia — meta é ≥ 300 kWh/dia` });
+
+  // Ticket médio
+  if (ticket < 20) alertas.push({ tipo:"warn", icon:"⚠️", titulo:"Ticket médio baixo", desc:`R$\u00a0${ticket.toFixed(2).replace(".",",")} por sessão — meta é R$\u00a030+` });
+
+  const crits = alertas.filter(a => a.tipo === "crit").length;
+  const warns = alertas.filter(a => a.tipo === "warn").length;
+  const semaforo = crits > 0 ? "vermelho" : warns >= 2 ? "amarelo" : warns === 1 ? "amarelo" : "verde";
+
+  return { semaforo, alertas };
+}
+
+function Semaforo({ sessions }: { sessions: Session[] }) {
+  const { semaforo, alertas } = useMemo(() => calcAlertas(sessions), [sessions]);
+
+  const cores = {
+    verde:    { bg: "rgba(0,229,160,0.08)",  border: "rgba(0,229,160,0.25)",  dot: "#00e5a0", label: "Operação Normal",    sub: "Todos os indicadores dentro das metas" },
+    amarelo:  { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", dot: "#f59e0b", label: "Atenção",            sub: "Alguns indicadores fora da meta" },
+    vermelho: { bg: "rgba(239,68,68,0.08)",  border: "rgba(239,68,68,0.25)",  dot: "#ef4444", label: "Alertas Críticos",  sub: "Indicadores críticos detectados" },
+  };
+  const c = cores[semaforo];
+  const emoji = semaforo === "verde" ? "🟢" : semaforo === "amarelo" ? "🟡" : "🔴";
+
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      {/* Semáforo principal */}
+      <div onClick={() => setExpanded(e => !e)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 14, cursor: "pointer", marginBottom: expanded ? 10 : 0, transition: "all 0.2s" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ fontSize: 28, lineHeight: 1 }}>{emoji}</div>
+          <div>
+            <div style={{ fontFamily: T.sans, fontSize: 16, fontWeight: 700, color: c.dot }}>{c.label}</div>
+            <div style={{ fontFamily: T.mono, fontSize: 11, color: T.text2, marginTop: 3 }}>{c.sub}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["crit","warn","ok"].map(tipo => {
+              const count = alertas.filter(a => a.tipo === tipo).length;
+              if (!count) return null;
+              const color = tipo === "crit" ? T.red : tipo === "warn" ? T.amber : T.green;
+              return (
+                <span key={tipo} style={{ fontFamily: T.mono, fontSize: 10, padding: "2px 9px", borderRadius: 20, background: `${color}20`, color, border: `1px solid ${color}40` }}>
+                  {tipo === "crit" ? "🔴" : tipo === "warn" ? "⚠️" : "✅"} {count}
+                </span>
+              );
+            })}
+          </div>
+          <span style={{ fontFamily: T.mono, fontSize: 10, color: T.text3 }}>{expanded ? "▲" : "▼"}</span>
+        </div>
+      </div>
+
+      {/* Lista de alertas */}
+      {expanded && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
+          {alertas.map((a, i) => {
+            const color = a.tipo === "crit" ? T.red : a.tipo === "warn" ? T.amber : T.green;
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", background: `${color}08`, border: `1px solid ${color}25`, borderRadius: 10 }}>
+                <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{a.icon}</span>
+                <div>
+                  <div style={{ fontFamily: T.sans, fontSize: 12, fontWeight: 600, color, marginBottom: 2 }}>{a.titulo}</div>
+                  <div style={{ fontFamily: T.mono, fontSize: 10, color: T.text2, lineHeight: 1.5 }}>{a.desc}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function KpiCard({ label, value, sub, accent = "#00e5a0", small }: { label: string; value: string; sub?: string; accent?: string; small?: boolean }) {
   return (
     <div style={{ background: "#121620", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
@@ -278,7 +401,11 @@ function TabDashboard({ sessions }: { sessions: Session[] }) {
           ))}
         </div>
       )}
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#6b7fa3", marginBottom: 4 }}>📅 {fmtDate(minDate)} → {fmtDate(maxDate)} · {days} dias · {totalSess} sessões</div>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#6b7fa3", marginBottom: 16 }}>📅 {fmtDate(minDate)} → {fmtDate(maxDate)} · {days} dias · {totalSess} sessões</div>
+
+      {/* SEMÁFORO — aparece aqui, antes dos KPIs */}
+      <Semaforo sessions={filtered} />
+
       <SectionLabel>KPIs do Período</SectionLabel>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 28 }}>
         <KpiCard label="Faturamento Bruto" value={brl(totalRev)} sub={`R$\u00a0${(totalRev/days).toFixed(0)}/dia`} accent="#00e5a0" />
@@ -734,9 +861,9 @@ function TabConfig() {
       <SectionLabel>Versão</SectionLabel>
       <Panel>
         <div style={{ fontFamily:"'JetBrains Mono', monospace",fontSize:11,color:"#6b7fa3",lineHeight:2 }}>
-          <div>⚡ <strong style={{ color:"#e8edf5" }}>HertzGo Vision v2.0</strong></div>
+          <div>⚡ <strong style={{ color:"#e8edf5" }}>HertzGo Vision v2.1</strong></div>
           <div>🏗️ Next.js 14 · React · Recharts · Z-API proxy seguro via Vercel</div>
-          <div>📊 Dashboard · DRE · Usuários · Ações (Z-API) · Config</div>
+          <div>📊 Dashboard · Alertas Semáforo · DRE · Usuários · Ações · Config</div>
         </div>
       </Panel>
     </div>
@@ -800,7 +927,7 @@ export default function HertzGo() {
           {sessions.length} registros · {okSess} válidos · {uniqHubs} estações
           {dts.length>0&&` · ${new Date(Math.min(...dts)).toLocaleDateString("pt-BR")} → ${new Date(Math.max(...dts)).toLocaleDateString("pt-BR")}`}
         </div>
-        <div>⚡ HertzGo Vision v2.0</div>
+        <div>⚡ HertzGo Vision v2.1</div>
       </footer>
     </div>
   );
