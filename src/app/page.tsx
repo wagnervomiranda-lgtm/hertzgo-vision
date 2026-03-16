@@ -252,7 +252,7 @@ function parseSpott(text: string): Session[] {
 
 // ─── PARSER MOVE (Excel via SheetJS) ─────────────────────────────────────────
 async function parseMove(file: File): Promise<{ sessions: Session[]; contatos: {nome:string;telefone:string}[] }> {
-  const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs" as string) as any;
+  const XLSX = await import("xlsx") as any;
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
