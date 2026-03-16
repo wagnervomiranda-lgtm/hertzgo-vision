@@ -1427,6 +1427,25 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
   };
   const testarZapi=async()=>{setZapiTesting(true);setZapiTestResult("");try{const r=await fetch("/api/zapi");const d=await r.json();setZapiTestResult(d.connected?"✅ Conectada e funcionando":d.configured?"⚠️ Configurada mas desconectada":"❌ Não configurada");}catch{setZapiTestResult("❌ Erro de conexão");}setZapiTesting(false);};
   const exportarBackup=()=>{const data=JSON.stringify(appState,null,2);const blob=new Blob([data],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`hertzgo-backup-${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.json`;a.click();URL.revokeObjectURL(url);};
+  const importRefConfig=useRef<HTMLInputElement>(null);
+  const[importMsg,setImportMsg]=useState<{ok:boolean;text:string}|null>(null);
+  const importarBackup=(file:File)=>{
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const json=JSON.parse(e.target?.result as string) as AppState;
+        // Validar que é um backup HertzGo
+        if(!json.mensagens&&!json.dreConfigs&&!json.contatos)throw new Error("Arquivo não parece ser um backup HertzGo");
+        savePartial(json);
+        setImportMsg({ok:true,text:"✅ Backup importado com sucesso!"});
+        setTimeout(()=>setImportMsg(null),3000);
+      }catch(err){
+        setImportMsg({ok:false,text:"❌ Erro: "+(err as Error).message});
+        setTimeout(()=>setImportMsg(null),4000);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const inp=(id:keyof DREConfig,label:string,type:"number"|"text"|"select",opts?:string[])=>(
     <div><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:4}}>{label}</div>{type==="select"?(<select value={cfg[id] as string} onChange={e=>setCfg(p=>({...p,[id]:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"6px 8px",borderRadius:8,fontSize:12,fontFamily:T.mono}}>{opts?.map(o=><option key={o} value={o}>{o}</option>)}</select>):(<input type={type} min={0} value={cfg[id] as string|number} onChange={e=>setCfg(p=>({...p,[id]:type==="number"?+e.target.value:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"6px 8px",borderRadius:8,fontSize:12,fontFamily:T.mono}}/>)}</div>
@@ -1454,7 +1473,12 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
         {([["contatos","📱 Contatos"],["mensagens","✉️ Mensagens"],["dre","💼 DRE Config"],["cupons","🎟️ Cupons"],["estacoes","🏪 Estações"],["zapi","🔌 Z-API"]] as [string,string][]).map(([id,label])=>(
           <button key={id} onClick={()=>setActiveSection(id as typeof activeSection)} style={{padding:"7px 16px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:`1px solid ${activeSection===id?T.green:T.border}`,background:activeSection===id?T.greenDim:"transparent",color:activeSection===id?T.green:T.text2,transition:"all 0.2s"}}>{label}</button>
         ))}
-        <button onClick={exportarBackup} style={{marginLeft:"auto",padding:"7px 16px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:"1px solid rgba(59,130,246,0.3)",background:"rgba(59,130,246,0.08)",color:"#60a5fa"}}>⬇️ Exportar Backup</button>
+        <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+          {importMsg&&<span style={{fontFamily:T.mono,fontSize:11,color:importMsg.ok?T.green:T.red}}>{importMsg.text}</span>}
+          <button onClick={()=>importRefConfig.current?.click()} style={{padding:"7px 16px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:"1px solid rgba(0,229,160,0.3)",background:"rgba(0,229,160,0.08)",color:T.green}}>⬆️ Importar Backup</button>
+          <input ref={importRefConfig} type="file" accept=".json" style={{display:"none"}} onChange={e=>{if(e.target.files?.[0])importarBackup(e.target.files[0]);e.target.value="";}}/>
+          <button onClick={exportarBackup} style={{padding:"7px 16px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:"1px solid rgba(59,130,246,0.3)",background:"rgba(59,130,246,0.08)",color:"#60a5fa"}}>⬇️ Exportar Backup</button>
+        </div>
       </div>
 
       {/* CONTATOS */}
