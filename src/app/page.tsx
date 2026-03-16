@@ -79,7 +79,7 @@ interface AppState {
   cupons: CupomRegistro[];
   estacoesCustom: EstacaoCustom[];
 }
-type Tab = "dash" | "dre" | "usuarios" | "acoes" | "config";
+type Tab = "dash" | "dre" | "usuarios" | "acoes" | "config" | "relatorio";
 
 // ─── ESTAÇÕES ────────────────────────────────────────────────────────────────
 const ESTACAO_MAP: Record<string, string> = {
@@ -1581,6 +1581,463 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
   );
 }
 
+
+// ─── TAB RELATÓRIOS ──────────────────────────────────────────────────────────
+function TabRelatorio({sessions,appState}:{sessions:Session[];appState:AppState}){
+  const hubs=useMemo(()=>Array.from(new Set(sessions.map(s=>s.hubKey))).sort(),[sessions]);
+  const[station,setStation]=useState(hubs[0]||"");
+  const[gerando,setGerando]=useState(false);
+  const[preview,setPreview]=useState(false);
+
+  const cfg=appState.dreConfigs[station]||null;
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const sessoes=ok.filter(s=>s.hubKey===station);
+  const datas=sessoes.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const bruto=sessoes.reduce((a,s)=>a+s.value,0);
+  const totalKwh=sessoes.reduce((a,s)=>a+s.energy,0);
+  const totalSess=sessoes.length;
+  const days=new Set(sessoes.map(s=>s.date.toDateString())).size||1;
+  const ticket=totalSess>0?bruto/totalSess:0;
+  const priceKwh=totalKwh>0?bruto/totalKwh:0;
+  const diasNoMes=30;
+  const faturMensal=bruto/periodDays*diasNoMes;
+  const faturAnual=faturMensal*12;
+  const hs=calcHealthScore(sessions,cfg,station);
+  const users=useMemo(()=>classificarUsuarios(ok),[ok]);
+  const stUsers=users.filter(u=>u.localFreqKey===station);
+  const motoristas=stUsers.filter(u=>u.isMotorista);
+  const heavys=stUsers.filter(u=>u.isHeavy);
+  const parceiros=stUsers.filter(u=>u.isParceiro);
+  const shoppers=stUsers.filter(u=>!u.isParceiro&&!u.isMotorista&&!u.isHeavy);
+  const top5=stUsers.sort((a,b)=>b.rev-a.rev).slice(0,5);
+  const hourData=Array(24).fill(0).map(()=>({sess:0}));
+  sessoes.forEach(s=>{if(s.startHour!==null)hourData[s.startHour].sess++;});
+  const maxHour=Math.max(...hourData.map(h=>h.sess),1);
+  const cancelled=sessions.filter(s=>s.hubKey===station&&s.cancelled).length;
+  const cancelRate=sessions.filter(s=>s.hubKey===station).length>0?cancelled/sessions.filter(s=>s.hubKey===station).length:0;
+
+  // DRE calculado
+  let ll=bruto,margem=0,repInv=0,repHz=bruto,retMensalInv=0,rentAnual=0,mesesPay=Infinity,faltaAmort=0;
+  let pTotal=0;
+  const dreRows:{label:string;val:number;bold?:boolean;sep?:boolean}[]=[];
+  if(cfg){
+    const aliq=cfg.modelo==="propria"?dreSimples(faturAnual):cfg.pctImposto;
+    const impostoVal=bruto*(aliq/100),custoEspaco=bruto*(cfg.pctEspaco/100),custoApp=bruto*(cfg.pctApp/100);
+    let custoEnergia=0;
+    if(!cfg.solarProprio){if(cfg.energiaTipo==="kwh")custoEnergia=totalKwh*cfg.energiaKwh;if(cfg.energiaTipo==="usina")custoEnergia=cfg.usinaFixo;}
+    ll=bruto-custoEspaco-impostoVal-custoApp-custoEnergia-cfg.fixoInternet-cfg.fixoAluguel;
+    margem=bruto>0?(ll/bruto)*100:0;
+    repInv=cfg.modelo==="investidor"?ll*(cfg.invPct/100):0;
+    repHz=cfg.modelo==="investidor"?ll*((100-cfg.invPct)/100):ll;
+    retMensalInv=repInv/periodDays*diasNoMes;
+    rentAnual=cfg.invTotal>0?(repInv/cfg.invTotal)*100*(diasNoMes/periodDays)*12:0;
+    faltaAmort=Math.max(0,cfg.invTotal-cfg.invAmort);
+    mesesPay=retMensalInv>0?faltaAmort/retMensalInv:Infinity;
+    const tot=cfg.invDividaPrio+(cfg.invTotal-cfg.invPago);
+    pTotal=tot>0?Math.min(100,(cfg.invAmort/tot)*100):0;
+    dreRows.push({label:"(+) Receita Bruta",val:bruto,bold:true});
+    if(cfg.pctEspaco>0)dreRows.push({label:`(−) Parceiro Espaço (${cfg.pctEspaco}%)`,val:-custoEspaco});
+    dreRows.push({label:`(−) Imposto (${aliq.toFixed(1)}%)`,val:-impostoVal});
+    dreRows.push({label:`(−) App/Plataforma (${cfg.pctApp}%)`,val:-custoApp});
+    if(cfg.energiaTipo!=="incluido")dreRows.push({label:"(−) Energia",val:-custoEnergia});
+    if(cfg.fixoAluguel>0)dreRows.push({label:"(−) Aluguel",val:-cfg.fixoAluguel});
+    if(cfg.fixoInternet>0)dreRows.push({label:"(−) Internet/Adm",val:-cfg.fixoInternet});
+    dreRows.push({label:"= Lucro Líquido",val:ll,bold:true,sep:true});
+    if(cfg.modelo==="investidor")dreRows.push({label:`→ Investidor (${cfg.invPct}%)`,val:repInv});
+    dreRows.push({label:`→ HertzGo`,val:repHz,bold:true});
+  }
+
+  const tipo=ESTACAO_TIPO[station]||"contratual";
+  const hsColor=hs.status==="saudavel"?"#00e5a0":hs.status==="atencao"?"#f59e0b":"#ef4444";
+  const hsEmoji=hs.status==="saudavel"?"🟢":hs.status==="atencao"?"🟡":"🔴";
+  const tendencia=()=>{
+    const d1=sessoes.filter(s=>s.date.getTime()<(dtMin.getTime()+dtMax.getTime())/2);
+    const d2=sessoes.filter(s=>s.date.getTime()>=(dtMin.getTime()+dtMax.getTime())/2);
+    const r1=d1.reduce((a,s)=>a+s.value,0)/Math.max(d1.length,1);
+    const r2=d2.reduce((a,s)=>a+s.value,0)/Math.max(d2.length,1);
+    if(r2>r1*1.05)return{label:"📈 Crescendo",color:"#00e5a0"};
+    if(r2<r1*0.95)return{label:"📉 Caindo",color:"#ef4444"};
+    return{label:"➡️ Estável",color:"#f59e0b"};
+  };
+  const trend=tendencia();
+
+  const gerarPDF=async()=>{
+    setGerando(true);
+    try{
+      // Carregar jsPDF via CDN script tag
+      if(!(window as unknown as Record<string,unknown>).jspdf){
+        await new Promise<void>((resolve,reject)=>{
+          const s=document.createElement("script");
+          s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+          s.onload=()=>resolve();s.onerror=()=>reject(new Error("Falha ao carregar jsPDF"));
+          document.head.appendChild(s);
+        });
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const {jsPDF:PDF}=(window as unknown as Record<string,{jsPDF:unknown}>).jspdf;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const doc=new (PDF as any)({orientation:"portrait",unit:"mm",format:"a4"}) as any;
+      const W=210,H=297;
+      const BG="#080a0f",GREEN="#00e5a0",AMBER="#f59e0b",RED="#ef4444",TEAL="#016070";
+      const dataGer=new Date().toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+      const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
+
+      const addPage=()=>{
+        doc.setFillColor(8,10,15);doc.rect(0,0,W,H,"F");
+        doc.setFillColor(18,22,32);doc.rect(0,0,W,12,"F");
+        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(0,229,160);
+        doc.text("HertzGo Vision",6,8);
+        doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(107,127,163);
+        doc.text(hubNome(station),W/2,8,{align:"center"});
+        doc.text(`Gerado em ${dataGer}`,W-6,8,{align:"right"});
+        doc.setDrawColor(30,40,55);doc.line(0,12,W,12);
+        doc.setFillColor(18,22,32);doc.rect(0,H-10,W,10,"F");
+        doc.setDrawColor(30,40,55);doc.line(0,H-10,W,H-10);
+        doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(45,58,82);
+        doc.text("CONFIDENCIAL · HertzGo · Uso Exclusivo Interno",W/2,H-4,{align:"center"});
+      };
+
+      const secLabel=(y:number,label:string)=>{
+        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(107,127,163);
+        doc.text(label.toUpperCase(),6,y);
+        doc.setDrawColor(30,40,55);doc.line(6,y+1.5,W-6,y+1.5);
+      };
+
+      const kpiBox=(x:number,y:number,w:number,h:number,label:string,value:string,sub:string,color:string)=>{
+        doc.setFillColor(18,22,32);doc.setDrawColor(30,40,55);
+        doc.roundedRect(x,y,w,h,2,2,"FD");
+        const rgb=color.startsWith("#")?[parseInt(color.slice(1,3),16),parseInt(color.slice(3,5),16),parseInt(color.slice(5,7),16)]:[0,229,160];
+        doc.setFillColor(rgb[0],rgb[1],rgb[2]);doc.rect(x,y,w,1,"F");
+        doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(107,127,163);
+        doc.text(label.toUpperCase(),x+3,y+6);
+        doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(rgb[0],rgb[1],rgb[2]);
+        doc.text(value,x+3,y+13);
+        doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(45,58,82);
+        doc.text(sub,x+3,y+18);
+      };
+
+      // ─── PÁGINA 1 — CAPA ─────────────────────────────────────────────────
+      doc.setFillColor(8,10,15);doc.rect(0,0,W,H,"F");
+      // Barra superior
+      doc.setFillColor(1,96,112);doc.rect(0,0,W,60,"F");
+      doc.setFillColor(0,229,160);doc.rect(0,58,W,2,"F");
+      // Logo texto
+      doc.setFont("helvetica","bold");doc.setFontSize(32);doc.setTextColor(255,255,255);
+      doc.text("Hertz",15,38);
+      doc.setTextColor(0,229,160);doc.text("Go",72,38);
+      doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(200,240,240);
+      doc.text("Vision · Painel Operacional",15,48);
+      // Título
+      doc.setFont("helvetica","bold");doc.setFontSize(22);doc.setTextColor(232,237,245);
+      doc.text("Relatório Operacional",15,80);
+      doc.setFont("helvetica","bold");doc.setFontSize(18);doc.setTextColor(0,229,160);
+      doc.text(hubNome(station),15,92);
+      // Badge tipo
+      const tipoColor=tipo==="propria"?[0,229,160]:tipo==="parceria"?[59,130,246]:[107,127,163];
+      doc.setFillColor(tipoColor[0],tipoColor[1],tipoColor[2]);doc.roundedRect(15,96,30,7,2,2,"F");
+      doc.setFont("helvetica","bold");doc.setFontSize(7);doc.setTextColor(8,10,15);
+      doc.text(tipo.toUpperCase(),30,101,{align:"center"});
+      // Período e data
+      doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(107,127,163);
+      doc.text(`Período: ${periodo}`,15,112);
+      doc.text(`Gerado em: ${dataGer}`,15,119);
+      doc.text(`${days} dias · ${totalSess} sessões · ${stUsers.length} usuários únicos`,15,126);
+      // Health Score destaque
+      doc.setFillColor(18,22,32);doc.setDrawColor(30,40,55);doc.roundedRect(15,138,W-30,50,4,4,"FD");
+      const hsRgb=hs.status==="saudavel"?[0,229,160]:hs.status==="atencao"?[245,158,11]:[239,68,68];
+      doc.setFillColor(hsRgb[0],hsRgb[1],hsRgb[2]);doc.roundedRect(15,138,W-30,2,2,2,"F");
+      doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(107,127,163);
+      doc.text("STATION HEALTH SCORE",W/2,148,{align:"center"});
+      doc.setFont("helvetica","bold");doc.setFontSize(40);doc.setTextColor(hsRgb[0],hsRgb[1],hsRgb[2]);
+      doc.text(`${hs.total}`,W/2-15,170,{align:"center"});
+      doc.setFont("helvetica","normal");doc.setFontSize(12);doc.setTextColor(107,127,163);
+      doc.text("/ 100",W/2+5,170);
+      doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(hsRgb[0],hsRgb[1],hsRgb[2]);
+      doc.text(hs.status==="saudavel"?"🟢 SAUDÁVEL":hs.status==="atencao"?"🟡 ATENÇÃO":"🔴 CRÍTICO",W/2,178,{align:"center"});
+      doc.setFont("helvetica","italic");doc.setFontSize(8);doc.setTextColor(107,127,163);
+      doc.text(hs.diagnostico,W/2,184,{align:"center"});
+      // Dimensões do score
+      const dims=[{l:"💰 Financeiro",v:hs.financeiro,m:40},{l:"⚡ Operacional",v:hs.operacional,m:35},{l:"🤝 Investidor",v:hs.investidor,m:25}];
+      dims.forEach((d,i)=>{
+        const x=20+i*(W-40)/3;const pw=(W-40)/3-4;
+        doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(107,127,163);
+        doc.text(d.l,x,198);
+        doc.setFillColor(24,29,40);doc.roundedRect(x,200,pw,4,1,1,"F");
+        const pct=d.v/d.m;
+        const barColor=pct>=0.7?[0,229,160]:pct>=0.4?[245,158,11]:[239,68,68];
+        doc.setFillColor(barColor[0],barColor[1],barColor[2]);doc.roundedRect(x,200,pw*pct,4,1,1,"F");
+        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(barColor[0],barColor[1],barColor[2]);
+        doc.text(`${d.v}/${d.m}`,x+pw+2,204);
+      });
+      // Confidencial capa
+      doc.setFillColor(18,22,32);doc.rect(0,H-15,W,15,"F");
+      doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(45,58,82);
+      doc.text("CONFIDENCIAL · HertzGo Vision · Uso Exclusivo Interno",W/2,H-5,{align:"center"});
+
+      // ─── PÁGINA 2 — KPIs + DRE ───────────────────────────────────────────
+      doc.addPage();addPage();
+      let y=20;
+      secLabel(y,"Visão Executiva — KPIs do Período");y+=6;
+      const kw=(W-18)/4;
+      kpiBox(6,y,kw,22,"Faturamento Bruto",brl(bruto),`R$${(bruto/days).toFixed(0)}/dia`,GREEN);
+      kpiBox(6+kw+2,y,kw,22,"Lucro Líquido",cfg?brl(ll):"Config DRE",cfg?`Margem ${margem.toFixed(1)}%`:"necessário",cfg&&ll>=0?GREEN:RED);
+      kpiBox(6+kw*2+4,y,kw,22,"Proj. Mensal",brl(faturMensal),"base 30 dias",AMBER);
+      kpiBox(6+kw*3+6,y,kw,22,"Proj. Anual",brl(faturAnual),"receita bruta","#3b82f6");
+      y+=26;
+      const kw2=(W-18)/4;
+      kpiBox(6,y,kw2,22,"Total Sessões",`${totalSess}`,`${(totalSess/days).toFixed(1)} sess/dia`,"#3b82f6");
+      kpiBox(6+kw2+2,y,kw2,22,"Energia Entregue",`${totalKwh.toFixed(0)} kWh`,`${(totalKwh/days).toFixed(0)} kWh/dia`,AMBER);
+      kpiBox(6+kw2*2+4,y,kw2,22,"Preço Médio/kWh",`R$${priceKwh.toFixed(2)}`,`Ticket: ${brl(ticket)}`,"#ef4444");
+      kpiBox(6+kw2*3+6,y,kw2,22,"Cancelamentos",`${(cancelRate*100).toFixed(1)}%`,cancelRate<=0.08?"✅ ok":cancelRate<=0.15?"⚠️ elevado":"🔴 crítico",cancelRate<=0.08?GREEN:cancelRate<=0.15?AMBER:RED);
+      y+=30;
+      // Tendência
+      secLabel(y,"Tendência");y+=7;
+      doc.setFont("helvetica","bold");doc.setFontSize(10);
+      const trendRgb=trend.color.startsWith("#")?[parseInt(trend.color.slice(1,3),16),parseInt(trend.color.slice(3,5),16),parseInt(trend.color.slice(5,7),16)]:[0,229,160];
+      doc.setTextColor(trendRgb[0],trendRgb[1],trendRgb[2]);
+      doc.text(trend.label,6,y);y+=8;
+      // DRE
+      if(cfg&&dreRows.length>0){
+        secLabel(y,"Demonstrativo de Resultado (DRE)");y+=7;
+        dreRows.forEach(r=>{
+          if(r.sep){doc.setDrawColor(30,40,55);doc.line(6,y-1,W-6,y-1);y+=1;}
+          doc.setFont("helvetica",r.bold?"bold":"normal");doc.setFontSize(8);
+          const rgb=r.val>=0?[232,237,245]:[239,68,68];
+          doc.setTextColor(rgb[0],rgb[1],rgb[2]);doc.text(r.label,6,y);
+          const vColor=r.bold?(r.val>=0?[0,229,160]:[239,68,68]):(r.val>=0?[232,237,245]:[239,68,68]);
+          doc.setTextColor(vColor[0],vColor[1],vColor[2]);doc.text(brl(r.val),W-6,y,{align:"right"});
+          y+=5.5;
+        });
+      }
+      y+=4;
+      // Segmentação de usuários
+      secLabel(y,"Segmentação de Usuários");y+=7;
+      const segs=[{l:"🔴 Motoristas",n:motoristas.length,color:RED},{l:"🟡 Heavy Users",n:heavys.length,color:AMBER},{l:"🟢 Shoppers",n:shoppers.length,color:GREEN},{l:"🔵 Parceiros",n:parceiros.length,color:"#3b82f6"}];
+      const segW=(W-16)/4;
+      segs.forEach((s,i)=>{
+        doc.setFillColor(18,22,32);doc.setDrawColor(30,40,55);doc.roundedRect(6+i*(segW+2),y,segW,16,2,2,"FD");
+        const sr=[parseInt(s.color.slice(1,3),16),parseInt(s.color.slice(3,5),16),parseInt(s.color.slice(5,7),16)];
+        doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(sr[0],sr[1],sr[2]);doc.text(s.l,8+i*(segW+2),y+5);
+        doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(sr[0],sr[1],sr[2]);doc.text(`${s.n}`,8+i*(segW+2),y+13);
+      });
+      y+=22;
+      // Top 5 usuários
+      if(top5.length>0){
+        secLabel(y,"Top 5 Usuários");y+=7;
+        top5.forEach((u,i)=>{
+          const rankColors=["#f59e0b","#94a3b8","#b47c3c","#6b7fa3","#6b7fa3"];
+          doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(parseInt(rankColors[i].slice(1,3),16),parseInt(rankColors[i].slice(3,5),16),parseInt(rankColors[i].slice(5,7),16));
+          doc.text(`${i+1}`,6,y);
+          doc.setFont("helvetica","normal");doc.setTextColor(232,237,245);doc.text(trunc(u.user,25),12,y);
+          doc.setFont("helvetica","bold");doc.setTextColor(0,229,160);doc.text(brl(u.rev),W-6,y,{align:"right"});
+          doc.setFont("helvetica","normal");doc.setTextColor(107,127,163);doc.text(`${u.sess} sess · ${u.kwh.toFixed(0)} kWh`,W-40,y);
+          doc.setDrawColor(24,29,40);doc.line(6,y+1,W-6,y+1);
+          y+=6;
+        });
+      }
+
+      // ─── PÁGINA 3 — INVESTIDOR / PERFORMANCE ─────────────────────────────
+      doc.addPage();addPage();
+      y=20;
+      if(cfg&&cfg.modelo==="investidor"){
+        secLabel(y,`Painel do Investidor — ${cfg.invNome||"Investidor"}`);y+=6;
+        const iw=(W-18)/4;
+        kpiBox(6,y,iw,22,"Retorno Período",brl(repInv),`${brl(retMensalInv)}/mês proj.`,AMBER);
+        kpiBox(6+iw+2,y,iw,22,"Rentabilidade Anual",`${rentAnual.toFixed(1)}%`,"sobre capital total",rentAnual>=12?GREEN:AMBER);
+        kpiBox(6+iw*2+4,y,iw,22,"Payback Estimado",mesesPay===Infinity?"—":mesesPay<12?`${Math.ceil(mesesPay)}m`:`${(mesesPay/12).toFixed(1)}a`,"para amortizar saldo",mesesPay<=36?GREEN:AMBER);
+        kpiBox(6+iw*3+6,y,iw,22,"Saldo Devedor",faltaAmort<=0?"Quitado":brl(faltaAmort),faltaAmort<=0?"✅ Payback ok":"restante",faltaAmort<=0?GREEN:RED);
+        y+=28;
+        // Barra de payback
+        secLabel(y,"Progresso do Payback");y+=7;
+        doc.setFillColor(24,29,40);doc.roundedRect(6,y,W-12,8,2,2,"F");
+        doc.setFillColor(0,229,160);doc.roundedRect(6,y,(W-12)*Math.min(1,pTotal/100),8,2,2,"F");
+        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(232,237,245);
+        doc.text(`${pTotal.toFixed(1)}% amortizado`,W/2,y+5.5,{align:"center"});
+        y+=14;
+        // Tabela investimento
+        secLabel(y,"Detalhamento do Investimento");y+=7;
+        const itens=[
+          {l:"Investimento Total",v:brl(cfg.invTotal)},{l:"Já Investido",v:brl(cfg.invPago)},
+          {l:"Dívida Prioritária",v:brl(cfg.invDividaPrio)},{l:"Já Amortizado",v:brl(cfg.invAmort)},
+          {l:"Split Investidor",v:`${cfg.invPct}% do LL`},{l:"Retorno Projetado Mensal",v:brl(retMensalInv)},
+        ];
+        itens.forEach(item=>{
+          doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(107,127,163);doc.text(item.l,6,y);
+          doc.setFont("helvetica","bold");doc.setTextColor(232,237,245);doc.text(item.v,W-6,y,{align:"right"});
+          doc.setDrawColor(24,29,40);doc.line(6,y+1,W-6,y+1);y+=6;
+        });
+      }else{
+        secLabel(y,"Performance — Estação Própria");y+=6;
+        const pw=(W-18)/3;
+        kpiBox(6,y,pw,22,"Receita Total",brl(bruto),`${brl(faturMensal)}/mês proj.`,GREEN);
+        kpiBox(6+pw+2,y,pw,22,"Ticket Médio",brl(ticket),`${(totalSess/days).toFixed(1)} sess/dia`,"#3b82f6");
+        kpiBox(6+pw*2+4,y,pw,22,"kWh/Dia",`${(totalKwh/days).toFixed(0)} kWh`,`Total: ${totalKwh.toFixed(0)} kWh`,AMBER);
+        y+=28;
+        if(cfg){
+          secLabel(y,"Retorno HertzGo");y+=7;
+          doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(107,127,163);doc.text("Lucro Líquido do Período:",6,y);
+          doc.setFont("helvetica","bold");doc.setTextColor(0,229,160);doc.text(brl(ll),W-6,y,{align:"right"});y+=6;
+          doc.setFont("helvetica","normal");doc.setTextColor(107,127,163);doc.text("Margem Líquida:",6,y);
+          doc.setFont("helvetica","bold");doc.setTextColor(ll>=0?0:239,ll>=0?229:68,ll>=0?160:68);doc.text(`${margem.toFixed(1)}%`,W-6,y,{align:"right"});y+=6;
+          doc.setFont("helvetica","normal");doc.setTextColor(107,127,163);doc.text("Projeção Anual:",6,y);
+          doc.setFont("helvetica","bold");doc.setTextColor(245,158,11);doc.text(brl(faturAnual),W-6,y,{align:"right"});y+=14;
+        }
+      }
+      // Heatmap por hora (texto simplificado)
+      secLabel(y,"Distribuição de Horários — Pico de Utilização");y+=7;
+      const peakHours=hourData.map((h,i)=>({h:i,s:h.sess})).sort((a,b)=>b.s-a.s).slice(0,5);
+      doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(107,127,163);
+      doc.text("Top 5 horários de pico:",6,y);y+=5;
+      peakHours.forEach((ph,i)=>{
+        const pct=maxHour>0?(ph.s/maxHour):0;
+        const barW=(W-60)*pct;
+        doc.setFillColor(24,29,40);doc.roundedRect(6,y,W-60,5,1,1,"F");
+        const bc=pct>0.7?[0,229,160]:pct>0.4?[245,158,11]:[59,130,246];
+        doc.setFillColor(bc[0],bc[1],bc[2]);doc.roundedRect(6,y,Math.max(barW,2),5,1,1,"F");
+        doc.setFont("helvetica","bold");doc.setFontSize(7);doc.setTextColor(107,127,163);
+        doc.text(`${ph.h}h`,W-50,y+4);
+        doc.setTextColor(232,237,245);doc.text(`${ph.s} sessões`,W-35,y+4);
+        y+=7;
+      });
+      y+=6;
+      // Notas finais
+      secLabel(y,"Notas e Observações");y+=7;
+      doc.setFont("helvetica","italic");doc.setFontSize(7);doc.setTextColor(45,58,82);
+      doc.text(`• Dados extraídos do sistema HertzGo Vision em ${dataGer}`,6,y);y+=5;
+      doc.text(`• Período analisado: ${periodo} (${periodDays} dias)`,6,y);y+=5;
+      doc.text("• Projeções mensais calculadas com base na média diária do período",6,y);y+=5;
+      doc.text("• Este relatório é confidencial e de uso exclusivo da HertzGo",6,y);y+=5;
+      doc.text("• Contato: (61) 99803-7361 · HertzGo Rede de Eletropostos",6,y);
+
+      // Salvar
+      const fname=`HertzGo_${hubNome(station).replace(/\s+/g,"_")}_${dtMin.toLocaleDateString("pt-BR").replace(/\//g,"-")}_${dtMax.toLocaleDateString("pt-BR").replace(/\//g,"-")}.pdf`;
+      doc.save(fname);
+    }catch(e){
+      console.error("Erro ao gerar PDF:",e);
+      alert("Erro ao gerar PDF. Verifique o console.");
+    }
+    setGerando(false);
+  };
+
+  return(
+    <div style={{padding:"24px 28px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28}}>
+        <div>
+          <div style={{fontFamily:T.sans,fontSize:20,fontWeight:700,color:T.text,marginBottom:4}}>📄 Relatórios</div>
+          <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Gere relatórios PDF profissionais por estação para investidores e gestão</div>
+        </div>
+      </div>
+
+      {/* Seletor de estação */}
+      <SectionLabel>Selecionar Estação</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(hubs.length,6)},1fr)`,gap:10,marginBottom:28}}>
+        {hubs.map(h=>{
+          const hs2=calcHealthScore(sessions,appState.dreConfigs[h]||null,h);
+          const color=hs2.status==="saudavel"?T.green:hs2.status==="atencao"?T.amber:T.red;
+          const tipo2=ESTACAO_TIPO[h]||"contratual";
+          return(
+            <div key={h} onClick={()=>setStation(h)} style={{background:station===h?`${color}10`:T.bg2,border:`1px solid ${station===h?color+"60":T.border}`,borderRadius:14,padding:"14px",cursor:"pointer",transition:"all 0.2s",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:station===h?color:"transparent"}}/>
+              <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{hubNome(h)}</div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{tipo2}</span>
+                <span style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color}}>{hs2.total}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Preview do relatório */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:28}}>
+        {/* Coluna esquerda — resumo */}
+        <div>
+          <Panel style={{marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text}}>📋 {hubNome(station)}</div>
+              <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{periodo}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              <KpiCard label="Receita Bruta" value={brl(bruto)} sub={`${brl(faturMensal)}/mês`} accent={T.green} small/>
+              <KpiCard label="Health Score" value={`${hs.total}/100`} sub={`${hsEmoji} ${hs.status}`} accent={hsColor} small/>
+              <KpiCard label="Sessões" value={`${totalSess}`} sub={`${(totalSess/days).toFixed(1)}/dia`} accent={T.blue} small/>
+              <KpiCard label="Margem" value={cfg?`${margem.toFixed(1)}%`:"—"} sub={cfg?"do faturamento":"Config DRE"} accent={cfg&&ll>=0?T.green:T.amber} small/>
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"8px 10px",background:T.bg3,borderRadius:8}}>
+              {hs.diagnostico}
+            </div>
+          </Panel>
+
+          <Panel style={{marginBottom:16}}>
+            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,marginBottom:12}}>📄 Conteúdo do Relatório</div>
+            {[
+              {icon:"🏠",label:"Capa",sub:"Logo · Estação · Health Score visual · Período"},
+              {icon:"📊",label:"Pág. 1 — KPIs Executivos",sub:"8 KPIs · DRE · Segmentação · Top 5 usuários"},
+              {icon:"💼",label:cfg?.modelo==="investidor"?"Pág. 2 — Painel do Investidor":"Pág. 2 — Performance Própria",sub:cfg?.modelo==="investidor"?"Payback · Rentabilidade · Amortização":"Receita HertzGo · Margem · Projeção"},
+              {icon:"⏰",label:"Pág. 2 — Inteligência Operacional",sub:"Heatmap de horários · Notas e observações"},
+            ].map((item,i)=>(
+              <div key={i} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                <span style={{fontSize:16,flexShrink:0}}>{item.icon}</span>
+                <div>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text}}>{item.label}</div>
+                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{item.sub}</div>
+                </div>
+              </div>
+            ))}
+          </Panel>
+        </div>
+
+        {/* Coluna direita — ação */}
+        <div>
+          <Panel style={{marginBottom:16,textAlign:"center",padding:"32px 24px"}}>
+            <div style={{fontSize:48,marginBottom:16}}>📄</div>
+            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>
+              Relatório — {hubNome(station)}
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:24,lineHeight:1.8}}>
+              3 páginas · PDF A4 · PT-BR<br/>
+              Gerado localmente no browser<br/>
+              Sem envio de dados para servidores
+            </div>
+            <button onClick={gerarPDF} disabled={gerando||sessoes.length===0} style={{width:"100%",padding:"14px 24px",borderRadius:12,fontFamily:T.sans,fontSize:14,fontWeight:700,cursor:sessoes.length===0?"not-allowed":"pointer",background:sessoes.length===0?"rgba(255,255,255,0.04)":T.green,color:sessoes.length===0?T.text3:T.bg,border:"none",transition:"all 0.2s",opacity:gerando?0.7:1,marginBottom:12}}>
+              {gerando?"⏳ Gerando PDF...":"⬇️ Gerar e Baixar PDF"}
+            </button>
+            {sessoes.length===0&&(
+              <div style={{fontFamily:T.mono,fontSize:11,color:T.amber}}>⚠️ Nenhuma sessão para esta estação no CSV carregado</div>
+            )}
+            {sessoes.length>0&&(
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>
+                {sessoes.length} sessões · {dtMin.toLocaleDateString("pt-BR")} → {dtMax.toLocaleDateString("pt-BR")}
+              </div>
+            )}
+          </Panel>
+
+          {!cfg&&(
+            <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:12,padding:"14px 16px",fontFamily:T.mono,fontSize:11,color:T.amber}}>
+              ⚙️ Configure o DRE desta estação em <strong>Config → DRE Config</strong> para incluir análise financeira no relatório.
+            </div>
+          )}
+
+          {cfg&&(
+            <Panel>
+              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,marginBottom:12}}>🔢 Resumo DRE</div>
+              {dreRows.map((r,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${T.border}`,borderTop:r.sep?`1px solid ${T.border}`:"none"}}>
+                  <span style={{fontFamily:T.mono,fontSize:11,fontWeight:r.bold?700:400,color:T.text2}}>{r.label}</span>
+                  <span style={{fontFamily:T.mono,fontSize:11,fontWeight:r.bold?700:400,color:r.val>=0?T.green:T.red}}>{brl(r.val)}</span>
+                </div>
+              ))}
+            </Panel>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 export default function HertzGo(){
   useFonts();
@@ -1599,7 +2056,7 @@ export default function HertzGo(){
   const hasSpott=sessions?sessions.some(s=>s.source==="spott"):false;
   const navItems:{id:Tab;label:string;icon:string}[]=[
     {id:"dash",label:"Dashboard",icon:"📊"},{id:"usuarios",label:"Usuários",icon:"👥"},
-    {id:"dre",label:"DRE",icon:"💼"},{id:"acoes",label:"Ações",icon:"🎯"},{id:"config",label:"Config",icon:"⚙️"},
+    {id:"dre",label:"DRE",icon:"💼"},{id:"acoes",label:"Ações",icon:"🎯"},{id:"config",label:"Config",icon:"⚙️"},{id:"relatorio",label:"Relatórios",icon:"📄"},
   ];
   if(!sessions)return(<div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:T.sans}}><UploadScreen onFile={setSessions}/></div>);
   return(
@@ -1626,6 +2083,7 @@ export default function HertzGo(){
         {tab==="dre"&&<TabDRE sessions={sessions} appState={appState}/>}
         {tab==="acoes"&&<TabAcoes sessions={sessions} appState={appState} onSaveDisparos={saveDisparos}/>}
         {tab==="config"&&<TabConfig appState={appState} onSave={savePartial}/>}
+        {tab==="relatorio"&&<TabRelatorio sessions={sessions} appState={appState}/>}
       </main>
       <footer style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 28px",background:"rgba(8,10,15,0.97)",borderTop:`1px solid ${T.border}`,fontFamily:T.mono,fontSize:10,color:T.text3,flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
