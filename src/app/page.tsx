@@ -1663,6 +1663,7 @@ function TabRelatorio({sessions,appState}:{sessions:Session[];appState:AppState}
     return{label:"➡️ Estável",color:"#f59e0b"};
   };
   const trend=tendencia();
+  const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
 
   const gerarPDF=async()=>{
     setGerando(true);
