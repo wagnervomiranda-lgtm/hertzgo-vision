@@ -1241,7 +1241,7 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
     if(!confirm(`Disparar para ${elegíveis.length} usuários? Delay de 3s entre envios.`))return;
     setEnviandoLote(p=>({...p,[section]:true}));
     for(let i=0;i<elegíveis.length;i++){await enviarUm(elegíveis[i].user,elegíveis[i].localFreqKey,msgId,template,cupom);if(i<elegíveis.length-1)await new Promise(r=>setTimeout(r,3000));}
-    setSelecionados(p=>({...p,[section]:new Set()}));setEnviandoLote(p=>({...p,[section]:false}));
+    setSelecionados(p=>({...p,[section]:[]}));setEnviandoLote(p=>({...p,[section]:false}));
   };
 
   // Definição das seções
