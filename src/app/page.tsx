@@ -1422,6 +1422,31 @@ px", borderRadius: 8, fontSize: 12, fontFamily: T.mono }} />
             </div>
           )}
           <div style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, padding: "12px 14px", fontFamily: T.mono, fontSize: 11, color: "#93c5fd" }}>
+            ℹ️ As credenciais ficam salvas no browser. Para segurança máxima, configure também as variáveis de ambiente no Vercel.
+          </div>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: 11, color: T.text2, lineHeight: 2 }}>
+            <div>⚡ <strong style={{ color: T.text }}>HertzGo Vision v3.1</strong></div>
+            <div>📊 Dashboard · DC/AC · Semáforo · Projeção · DRE · VIP Score · CRM · Mensagens · Move XLSX</div>
+          </div>
+        </Panel>
+      )}
+    </div>
+  );
+}
+          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+            <button onClick={() => { onSave({ zapi }); setZapiSaved(true); setTimeout(() => setZapiSaved(false), 2000); }} style={{ background: zapiSaved ? "rgba(0,229,160,0.2)" : T.greenDim, border: `1px solid ${zapiSaved ? T.green : "rgba(0,229,160,0.3)"}`, color: T.green, padding: "8px 20px", borderRadius: 8, fontSize: 12, cursor: "pointer", fontFamily: T.mono, transition: "all 0.3s" }}>
+              {zapiSaved ? "✅ Credenciais salvas!" : "💾 Salvar Credenciais"}
+            </button>
+            <button onClick={testarZapi} disabled={zapiTesting} style={{ background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.3)", color: "#60a5fa", padding: "8px 20px", borderRadius: 8, fontSize: 12, cursor: "pointer", fontFamily: T.mono }}>
+              {zapiTesting ? "⏳ Testando..." : "🔌 Testar Conexão"}
+            </button>
+          </div>
+          {zapiTestResult && (
+            <div style={{ fontFamily: T.mono, fontSize: 12, color: zapiTestResult.startsWith("✅") ? T.green : zapiTestResult.startsWith("⚠️") ? T.amber : T.red, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 8, marginBottom: 16 }}>
+              {zapiTestResult}
+            </div>
+          )}
+          <div style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, padding: "12px 14px", fontFamily: T.mono, fontSize: 11, color: "#93c5fd" }}>
             ℹ️ As credenciais ficam salvas no browser. Para segurança máxima no futuro, configure também as variáveis de ambiente no Vercel.
           </div>
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${T.border}`, fontFamily: T.mono, fontSize: 11, color: T.text2, lineHeight: 2 }}>
