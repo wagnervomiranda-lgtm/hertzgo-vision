@@ -2101,7 +2101,7 @@ ${cfg?`<div class="payback-wrap">
   <div class="kpi"><div class="kpi-icon">🔌</div><div class="kpi-lbl">Sessões Realizadas</div><div class="kpi-val" style="color:var(--green)">${numFmt(d.totalSess)}</div><div class="kpi-detail">${sessPerDay.toFixed(1)}/dia · ${days} dias</div></div>
   <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">kWh Entregues</div><div class="kpi-val" style="color:var(--teal)">${numFmt(d.totalKwh)}</div><div class="kpi-detail">${kwhPerDay.toFixed(0)} kWh/dia</div></div>
   <div class="kpi"><div class="kpi-icon">💳</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(d.ticket)}</div><div class="kpi-detail">R$${d.priceKwh.toFixed(2)}/kWh</div></div>
-  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?'var(--green)':"var(--amber)}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} de ${stUsers.length} usuários</div></div>
+  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?'var(--green)':'var(--amber)'}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} de ${stUsers.length} usuários</div></div>
 </div>
 <div class="kpi-grid cols3">
   <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-lbl">Usuários Únicos</div><div class="kpi-val" style="color:var(--purple)">${numFmt(stUsers.length)}</div><div class="kpi-detail">Base ativa no período</div></div>
