@@ -331,7 +331,7 @@ function UploadScreen({ onFile }: { onFile: (s: Session[]) => void }) {
 // ─── TAB DASHBOARD ────────────────────────────────────────────────────────────
 function TabDashboard({ sessions }: { sessions: Session[] }) {
   const [activeHub, setActiveHub] = useState("__all__");
-  const hubs = useMemo(() => Array.from(new Set(sessions.map(s => s.hub))].sort(), [sessions]);
+  const hubs = useMemo(() => Array.from(new Set(sessions.map(s => s.hub))).sort(), [sessions]);
   const filtered = useMemo(() => activeHub === "__all__" ? sessions : sessions.filter(s => s.hub === activeHub), [sessions, activeHub]);
   const ok = filtered.filter(s => !s.cancelled && s.energy > 0);
   const totalRev = ok.reduce((a, s) => a + s.value, 0);
@@ -566,7 +566,7 @@ function TabUsuarios({ sessions }: { sessions: Session[] }) {
 
 // ─── TAB DRE ──────────────────────────────────────────────────────────────────
 function TabDRE({ sessions }: { sessions: Session[] }) {
-  const hubs = useMemo(() => Array.from(new Set(sessions.map(s => s.hub))].sort(), [sessions]);
+  const hubs = useMemo(() => Array.from(new Set(sessions.map(s => s.hub))).sort(), [sessions]);
   const [station, setStation] = useState(hubs[0] || "");
   const [cfg, setCfg] = useState<DREConfig>({
     modelo: "investidor", pctEspaco: 50, pctImposto: 7, pctApp: 7,
