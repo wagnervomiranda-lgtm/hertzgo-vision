@@ -1398,4 +1398,18 @@ export default function HertzGo(){
       <main style={{flex:1}}>
         {tab==="dash"&&<TabDashboard sessions={sessions} meta={currentMeta} onMetaChange={setCurrentMeta}/>}
         {tab==="usuarios"&&<TabUsuarios sessions={sessions} appState={appState}/>}
-        {tab==="dre"&&<TabDRE sessions={sessions} appState={appState} onSaveDRE=
+        {tab==="dre"&&<TabDRE sessions={sessions} appState={appState} onSaveDRE={saveDRE}/>}
+        {tab==="acoes"&&<TabAcoes sessions={sessions} appState={appState} onSaveDisparos={saveDisparos}/>}
+        {tab==="config"&&<TabConfig appState={appState} onSave={savePartial}/>}
+      </main>
+      <footer style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 28px",background:"rgba(8,10,15,0.97)",borderTop:"1px solid rgba(255,255,255,0.07)",fontFamily:"'JetBrains Mono', monospace",fontSize:10,color:"#2d3a52",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:"#00e5a0",boxShadow:"0 0 6px #00e5a0",display:"inline-block"}}/>
+          {sessions.length} registros · {okSess} válidos · {uniqHubs} estações
+          {dts.length>0&&` · ${new Date(Math.min(...dts)).toLocaleDateString("pt-BR")} → ${new Date(Math.max(...dts)).toLocaleDateString("pt-BR")}`}
+        </div>
+        <div>⚡ HertzGo Vision v3.0</div>
+      </footer>
+    </div>
+  );
+}  s
