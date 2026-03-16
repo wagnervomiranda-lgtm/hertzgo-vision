@@ -216,7 +216,7 @@ function detectEstacao(filename: string, rows: {estacaoKey?:string}[]): string {
   const fname=norm(filename);
   for (const [k,v] of Object.entries(ESTACAO_MAP)) { if (fname.includes(k)) return v; }
   const keys=rows.map(r=>r.estacaoKey).filter(Boolean) as string[];
-  if (keys.length>0) { const counts:Record<string,number>{}; keys.forEach(k=>{counts[k]=(counts[k]||0)+1;}); return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0]; }
+  if (keys.length>0) { const counts:Record<string,number>={}; keys.forEach(k=>{counts[k]=(counts[k]||0)+1;}); return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0]; }
   return "desconhecida";
 }
 
