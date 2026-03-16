@@ -867,7 +867,7 @@ function TabUsuarios({sessions,appState}:{sessions:Session[];appState:AppState})
         <KpiCard label="Novos na Rede" value={`${novosNaRede.length}`} sub={`últimos ${cortNovosDias} dias`} accent={T.teal}/>
         <KpiCard label="Motoristas App" value={`${motoristas.length}`} sub="alvos prioritários" accent={T.red}/>
         <KpiCard label="Cobertura Tel." value={`${pctCobertura}%`} sub={`${totalComTel} de ${users.length}`} accent={+pctCobertura>=70?T.green:T.amber}/>
-        <KpiCard label="Concentração" value={`${concPct.toFixed(0)}%`} sub={`Top 10 usuários · ${concPct>40?"⚠️ risco":"ok"}`} accent={concPct>40?T.red:T.green}/>
+        <KpiCard label="Concentração" value={`${concPct.toFixed(0)}%`} sub={`Top 10 usuários · ${concPct>40?'⚠️ risco':'ok'}`} accent={concPct>40?T.red:T.green}/>
       </div>
 
       {/* Navegação interna */}
@@ -1139,7 +1139,7 @@ function TabDRE({sessions,appState}:{sessions:Session[];appState:AppState}){
     pCur=tot>0?Math.min(100,((amPrio+amInv)/tot)*100):0;
     dreRows.push({label:"(+) Receita Bruta",val:bruto,bold:true});
     if(cfg.pctEspaco>0)dreRows.push({label:`(−) Parceiro Espaço (${cfg.pctEspaco}%)`,val:-custoEspaco});
-    dreRows.push({label:`(−) Imposto (${aliq.toFixed(1)}%${cfg.modelo==="propria"?" Simples":" bruto"})`,val:-impostoVal});
+    dreRows.push({label:`(−) Imposto (${aliq.toFixed(1)}%${cfg.modelo==='propria'?' Simples':' bruto'})`,val:-impostoVal});
     dreRows.push({label:`(−) App/Plataforma (${cfg.pctApp}%)`,val:-custoApp});
     if(cfg.energiaTipo!=="incluido")dreRows.push({label:"(−) Energia",val:-custoEnergia});
     if(cfg.fixoAluguel>0)dreRows.push({label:"(−) Aluguel",val:-cfg.fixoAluguel});
@@ -1808,7 +1808,7 @@ function gerarCoverHTML(eyebrow:string,titleLine1:string,titleAccent:string,subL
 }
 
 function gerarDreHTML(dreItems:{lbl:string;val:number;main?:boolean;result?:boolean}[],invNome:string,invPct:number,repInv:number,repHz:number,margem:number,ll:number):string{
-  const rows=dreItems.map(r=>`<div class="dre-row${r.result?" result":""}"><span class="dre-lbl${r.main?" main":""}">${r.lbl}</span><span class="dre-val ${r.val>=0?"pos":"neg"}">${r.val>=0?brlFmt(r.val):"– "+brlFmt(r.val)}</span></div>`).join("");
+  const rows=dreItems.map(r=>`<div class="dre-row${r.result?' result':''}"><span class="dre-lbl${r.main?' main':''}">${r.lbl}</span><span class="dre-val ${r.val>=0?'pos':'neg'}">${r.val>=0?brlFmt(r.val):"– "+brlFmt(r.val)}</span></div>`).join("");
   const distHtml=invPct>0?`<div class="dist-box">
   <div class="dist-title">Distribuição do Lucro · ${invPct}/${100-invPct}</div>
   <div class="dist-card flbr"><div class="dist-who">🏢 ${invNome}</div><div class="dist-amount">${brlFmt(repInv)}</div><div class="dist-note">${invPct}% do lucro líquido<br><em>* Abatimento do aporte investido</em></div></div>
@@ -1947,10 +1947,10 @@ ${gerarDreHTML(d.dreItems,invNome,invPct,d.repInv,d.repHz,d.margem,d.ll)}
 <div class="section-header"><div><div class="section-title">02 · Investimento</div><div class="section-h2">KPIs do Sócio</div></div><span class="section-tag tag-teal">Saldo ${brlFmt(d.faltaAmort)}</span></div>
 <div class="kpi-invest">
   <div class="ki g"><div class="ki-lbl">Rentabilidade Anual</div><div class="ki-val">${d.rentAnual.toFixed(1)}%</div><div class="ki-sub">Sobre capital total investido</div></div>
-  <div class="ki a"><div class="ki-lbl">Payback Estimado</div><div class="ki-val">${d.mesesPay===Infinity?"—":d.mesesPay<12?`${Math.ceil(d.mesesPay)}m`:`${(d.mesesPay/12).toFixed(1)}a`}</div><div class="ki-sub">Para amortizar saldo devedor</div></div>
+  <div class="ki a"><div class="ki-lbl">Payback Estimado</div><div class="ki-val">${d.mesesPay===Infinity?'—':d.mesesPay<12?`${Math.ceil(d.mesesPay)}m`:`${(d.mesesPay/12).toFixed(1)}a`}</div><div class="ki-sub">Para amortizar saldo devedor</div></div>
   <div class="ki t"><div class="ki-lbl">Retorno Mensal Proj.</div><div class="ki-val">${brlFmt(d.retMensalInv)}</div><div class="ki-sub">${invPct}% do lucro líquido</div></div>
   <div class="ki g"><div class="ki-lbl">Lucratividade</div><div class="ki-val">${d.margem.toFixed(1)}%</div><div class="ki-sub">Margem líquida do período</div></div>
-  <div class="ki t"><div class="ki-lbl">Saldo a Amortizar</div><div class="ki-val">${d.faltaAmort<=0?"Quitado":brlFmt(d.faltaAmort)}</div><div class="ki-sub">${d.faltaAmort<=0?"✅ Payback concluído":"Baseado no Config DRE"}</div></div>
+  <div class="ki t"><div class="ki-lbl">Saldo a Amortizar</div><div class="ki-val">${d.faltaAmort<=0?'Quitado':brlFmt(d.faltaAmort)}</div><div class="ki-sub">${d.faltaAmort<=0?'✅ Payback concluído':'Baseado no Config DRE'}</div></div>
   <div class="ki a"><div class="ki-lbl">Projeção Anual</div><div class="ki-val">${brlFmt(d.retMensalInv*12)}</div><div class="ki-sub">Retorno anual projetado</div></div>
 </div>
 <div class="payback-wrap">
@@ -1963,18 +1963,18 @@ ${gerarDreHTML(d.dreItems,invNome,invPct,d.repInv,d.repHz,d.margem,d.ll)}
   </div></div>
   <div class="payback-info">
     <div class="pb-card"><div class="pb-card-icon">📊</div><div class="pb-card-lbl">Investimento Total ${invNome}</div><div class="pb-card-val">${brlFmt(cfg.invTotal)}</div><div class="pb-card-sub">Já integralizado: ${brlFmt(cfg.invPago)}<br>Já amortizado: ${brlFmt(cfg.invAmort)}<br>Saldo devedor: ${brlFmt(d.faltaAmort)}</div></div>
-    <div class="pb-card"><div class="pb-card-icon">🎯</div><div class="pb-card-lbl">Previsão Payback Completo</div><div class="pb-card-val" style="color:var(--teal);font-size:22px;">${d.mesesPay===Infinity?"—":d.mesesPay<12?`${Math.ceil(d.mesesPay)} meses`:`~${(d.mesesPay/12).toFixed(0)} anos`}</div><div class="pb-card-sub">Projeção baseada em ${brlFmt(d.retMensalInv)}/mês<br><span style="color:var(--green)">Após payback: ${brlFmt(d.retMensalInv)}/mês lucro puro</span></div></div>
+    <div class="pb-card"><div class="pb-card-icon">🎯</div><div class="pb-card-lbl">Previsão Payback Completo</div><div class="pb-card-val" style="color:var(--teal);font-size:22px;">${d.mesesPay===Infinity?'—':d.mesesPay<12?`${Math.ceil(d.mesesPay)} meses`:`~${(d.mesesPay/12).toFixed(0)} anos`}</div><div class="pb-card-sub">Projeção baseada em ${brlFmt(d.retMensalInv)}/mês<br><span style="color:var(--green)">Após payback: ${brlFmt(d.retMensalInv)}/mês lucro puro</span></div></div>
     <div class="pb-card"><div class="pb-card-icon">📈</div><div class="pb-card-lbl">ROI Anual Estimado</div><div class="pb-card-val" style="color:var(--amber);font-size:22px;">${d.rentAnual.toFixed(1)}%</div><div class="pb-card-sub">${brlFmt(d.retMensalInv*12)}/ano (${brlFmt(d.retMensalInv)} × 12)<br>Sobre investimento total ${brlFmt(cfg.invTotal)}</div></div>
   </div>
 </div>
 </div>`:"";
   const sec03=`<div class="section">
-<div class="section-header"><div><div class="section-title">0${cfg&&cfg.modelo==="investidor"?"3":"2"} · Operação</div><div class="section-h2">Demanda & Uso</div></div><span class="section-tag tag-teal">${days} dias · ${days===periodDays?"0 dias zerados":`${periodDays-days} dias sem op.`}</span></div>
+<div class="section-header"><div><div class="section-title">0${cfg&&cfg.modelo==='investidor'?'3':'2'} · Operação</div><div class="section-h2">Demanda & Uso</div></div><span class="section-tag tag-teal">${days} dias · ${days===periodDays?'0 dias zerados':`${periodDays-days} dias sem op.`}</span></div>
 <div class="kpi-grid cols4" style="margin-bottom:32px;">
   <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">kWh Entregues</div><div class="kpi-val" style="color:var(--teal)">${numFmt(d.totalKwh)}</div><div class="kpi-detail">Média ${kwhPerDay.toFixed(0)} kWh/dia</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,kwhPerDay/metaKwhDay*100).toFixed(0)}%;background:var(--teal)"></div></div></div>
   <div class="kpi"><div class="kpi-icon">🔌</div><div class="kpi-lbl">Total de Sessões</div><div class="kpi-val" style="color:var(--green)">${numFmt(d.totalSess)}</div><div class="kpi-detail">Média ${sessPerDay.toFixed(1)}/dia</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,sessPerDay/metaSessDay*100).toFixed(0)}%;background:var(--green)"></div></div></div>
   <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">kWh / Sessão</div><div class="kpi-val" style="color:var(--amber)">${d.totalSess>0?(d.totalKwh/d.totalSess).toFixed(1):0}</div><div class="kpi-detail">Energia média por carregamento</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:60%;background:var(--amber)"></div></div></div>
-  <div class="kpi"><div class="kpi-icon">🚫</div><div class="kpi-lbl">Cancelamentos</div><div class="kpi-val" style="color:${cancelRate>0.08?"var(--red)":"var(--green)"}">${cancelled}</div><div class="kpi-detail">Taxa ${(cancelRate*100).toFixed(1)}% · Meta &lt;8%</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,(cancelRate*100)/8*100).toFixed(0)}%;background:${cancelRate>0.08?"var(--red)":"var(--green)"}"></div></div></div>
+  <div class="kpi"><div class="kpi-icon">🚫</div><div class="kpi-lbl">Cancelamentos</div><div class="kpi-val" style="color:${cancelRate>0.08?'var(--red)':'var(--green)'}">${cancelled}</div><div class="kpi-detail">Taxa ${(cancelRate*100).toFixed(1)}% · Meta &lt;8%</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,(cancelRate*100)/8*100).toFixed(0)}%;background:${cancelRate>0.08?'var(--red)':'var(--green)'}"></div></div></div>
 </div>
 <div class="demanda-grid">
   <div class="dem-card"><div class="dem-card-tag pico-tag">📅 Melhor Dia</div><div class="dem-card-val" style="color:var(--amber)">${bestDayFmt}</div><div class="dem-card-sub">Receita: ${brlFmt(bestRev)}<br>${bestDayDow}-feira · pico orgânico</div></div>
@@ -1991,8 +1991,8 @@ ${gerarDreHTML(d.dreItems,invNome,invPct,d.repInv,d.repHz,d.margem,d.ll)}
 <div class="section-header"><div><div class="section-title">0${secN} · Base de Clientes</div><div class="section-h2">Usuários & Fidelização</div></div><span class="section-tag tag-green">${(recRate*100).toFixed(1)}% recorrentes</span></div>
 <div class="kpi-grid cols4" style="margin-bottom:32px;">
   <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-lbl">Usuários Únicos</div><div class="kpi-val" style="color:var(--teal)">${numFmt(stUsers.length)}</div><div class="kpi-detail">Base ativa no período</div></div>
-  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?"var(--green)":"var(--amber)}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} usuários retornantes</div></div>
-  <div class="kpi"><div class="kpi-icon">💳</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(ticket)}</div><div class="kpi-detail">Meta ≥ R$30 ${ticket>=30?"✓":"✗"}</div></div>
+  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?'var(--green)':'var(--amber)'}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} usuários retornantes</div></div>
+  <div class="kpi"><div class="kpi-icon">💳</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(ticket)}</div><div class="kpi-detail">Meta ≥ R$30 ${ticket>=30?'✓':'✗'}</div></div>
   <div class="kpi"><div class="kpi-icon">📈</div><div class="kpi-lbl">LTV Anual Est.</div><div class="kpi-val" style="color:var(--purple)">${brlFmt(ticket*(d.totalSess/Math.max(stUsers.length,1))*12)}</div><div class="kpi-detail">Por usuário recorrente</div></div>
 </div>
 <div class="chart-grid cols2">
@@ -2002,17 +2002,17 @@ ${gerarDreHTML(d.dreItems,invNome,invPct,d.repInv,d.repHz,d.margem,d.ll)}
 </div>`;
   const warnCount=[semClass(sessPerDay,metaSessDay),semClass(revPerDay,metaRevDay),semClass(kwhPerDay,metaKwhDay),semClass(cancelRate*100,8,true),semClass(ticket,30),semClass(recRate*100,50),semClass(days,periodDays)].filter(s=>s!=="ok").length;
   const sec05=`<div class="section">
-<div class="section-header"><div><div class="section-title">0${Number(secN)+1} · Performance</div><div class="section-h2">Metas & Indicadores</div></div><span class="section-tag ${warnCount===0?"tag-green":warnCount<=2?"tag-amber":"tag-red"}">${warnCount} indicador${warnCount!==1?"es":""} em atenção</span></div>
+<div class="section-header"><div><div class="section-title">0${Number(secN)+1} · Performance</div><div class="section-h2">Metas & Indicadores</div></div><span class="section-tag ${warnCount===0?'tag-green':warnCount<=2?'tag-amber':'tag-red'}">${warnCount} indicador${warnCount!==1?'es':''} em atenção</span></div>
 <table class="meta-table">
 <thead><tr><th>Indicador</th><th>Realizado</th><th>Meta</th><th>Status</th><th>Tendência</th></tr></thead>
 <tbody>
-<tr><td>Sessões/dia</td><td class="val-${semClass(sessPerDay,metaSessDay)}">${sessPerDay.toFixed(1)}</td><td>≥ ${metaSessDay}/dia</td><td><span class="indicator ind-${semClass(sessPerDay,metaSessDay)}"></span><span class="val-${semClass(sessPerDay,metaSessDay)}">${semLabel(sessPerDay,metaSessDay)}</span></td><td style="color:var(--text2)">${sessPerDay>=metaSessDay?"→ Manter":"↗ Campanha dias fracos"}</td></tr>
+<tr><td>Sessões/dia</td><td class="val-${semClass(sessPerDay,metaSessDay)}">${sessPerDay.toFixed(1)}</td><td>≥ ${metaSessDay}/dia</td><td><span class="indicator ind-${semClass(sessPerDay,metaSessDay)}"></span><span class="val-${semClass(sessPerDay,metaSessDay)}">${semLabel(sessPerDay,metaSessDay)}</span></td><td style="color:var(--text2)">${sessPerDay>=metaSessDay?'→ Manter':'↗ Campanha dias fracos'}</td></tr>
 <tr><td>kWh/dia</td><td class="val-${semClass(kwhPerDay,metaKwhDay)}">${kwhPerDay.toFixed(0)}</td><td>≥ ${metaKwhDay} kWh/dia</td><td><span class="indicator ind-${semClass(kwhPerDay,metaKwhDay)}"></span><span class="val-${semClass(kwhPerDay,metaKwhDay)}">${semLabel(kwhPerDay,metaKwhDay)}</span></td><td style="color:var(--text2)">→ Depende volume DC</td></tr>
-<tr><td>Receita/dia</td><td class="val-${semClass(revPerDay,metaRevDay)}">${brlFmt(revPerDay)}</td><td>≥ ${brlFmt(metaRevDay)}/dia</td><td><span class="indicator ind-${semClass(revPerDay,metaRevDay)}"></span><span class="val-${semClass(revPerDay,metaRevDay)}">${semLabel(revPerDay,metaRevDay)}</span></td><td style="color:var(--text2)">${revPerDay>=metaRevDay?"↗ Manter tarifa":"↗ Tarifa e volume"}</td></tr>
+<tr><td>Receita/dia</td><td class="val-${semClass(revPerDay,metaRevDay)}">${brlFmt(revPerDay)}</td><td>≥ ${brlFmt(metaRevDay)}/dia</td><td><span class="indicator ind-${semClass(revPerDay,metaRevDay)}"></span><span class="val-${semClass(revPerDay,metaRevDay)}">${semLabel(revPerDay,metaRevDay)}</span></td><td style="color:var(--text2)">${revPerDay>=metaRevDay?'↗ Manter tarifa':'↗ Tarifa e volume'}</td></tr>
 <tr><td>Ticket médio/sessão</td><td class="val-${semClass(ticket,30)}">${brlFmt(ticket)}</td><td>≥ R$30</td><td><span class="indicator ind-${semClass(ticket,30)}"></span><span class="val-${semClass(ticket,30)}">${semLabel(ticket,30)}</span></td><td style="color:var(--text2)">→ Estável</td></tr>
-<tr><td>Taxa de cancelamento</td><td class="val-${semClass(cancelRate*100,8,true)}">${(cancelRate*100).toFixed(1)}%</td><td>&lt; 8%</td><td><span class="indicator ind-${semClass(cancelRate*100,8,true)}"></span><span class="val-${semClass(cancelRate*100,8,true)}">${semLabel(cancelRate*100,8,true)}</span></td><td style="color:var(--text2)">${cancelRate<=0.08?"→ Manter":"↘ Investigar UX/App"}</td></tr>
-<tr><td>Taxa recorrência</td><td class="val-${semClass(recRate*100,50)}">${(recRate*100).toFixed(1)}%</td><td>≥ 50%</td><td><span class="indicator ind-${semClass(recRate*100,50)}"></span><span class="val-${semClass(recRate*100,50)}">${semLabel(recRate*100,50)}</span></td><td style="color:var(--text2)">${recRate>=0.5?"↗ Programa fidelidade":"↗ Ativar CRM"}</td></tr>
-<tr><td>Dias sem operação</td><td class="val-${days===periodDays?"ok":"warn"}">${periodDays-days} dias</td><td>0 dias</td><td><span class="indicator ind-${days===periodDays?"ok":"warn"}"></span><span class="val-${days===periodDays?"ok":"warn"}">${days===periodDays?"Perfeito ✓":"Atenção"}</span></td><td style="color:var(--text2)">→ Manter</td></tr>
+<tr><td>Taxa de cancelamento</td><td class="val-${semClass(cancelRate*100,8,true)}">${(cancelRate*100).toFixed(1)}%</td><td>&lt; 8%</td><td><span class="indicator ind-${semClass(cancelRate*100,8,true)}"></span><span class="val-${semClass(cancelRate*100,8,true)}">${semLabel(cancelRate*100,8,true)}</span></td><td style="color:var(--text2)">${cancelRate<=0.08?'→ Manter':'↘ Investigar UX/App'}</td></tr>
+<tr><td>Taxa recorrência</td><td class="val-${semClass(recRate*100,50)}">${(recRate*100).toFixed(1)}%</td><td>≥ 50%</td><td><span class="indicator ind-${semClass(recRate*100,50)}"></span><span class="val-${semClass(recRate*100,50)}">${semLabel(recRate*100,50)}</span></td><td style="color:var(--text2)">${recRate>=0.5?'↗ Programa fidelidade':'↗ Ativar CRM'}</td></tr>
+<tr><td>Dias sem operação</td><td class="val-${days===periodDays?'ok':'warn'}">${periodDays-days} dias</td><td>0 dias</td><td><span class="indicator ind-${days===periodDays?'ok':'warn'}"></span><span class="val-${days===periodDays?'ok':'warn'}">${days===periodDays?'Perfeito ✓':'Atenção'}</span></td><td style="color:var(--text2)">→ Manter</td></tr>
 </tbody></table>
 </div>`;
   const sec06=`<div class="section">
@@ -2076,11 +2076,11 @@ ${gerarDreHTML(d.dreItems,invNome,invPct,d.repInv,d.repHz,d.margem,d.ll)}
   const sec02=`<div class="section">
 <div class="section-header"><div><div class="section-title">02 · Retorno do Investimento</div><div class="section-h2">KPIs do Sócio</div></div><span class="section-tag tag-teal">${cfg?`Saldo ${brlFmt(d.faltaAmort)}`:"—"}</span></div>
 <div class="kpi-invest">
-  <div class="ki ${d.rentAnual>=12?"g":"a"}"><div class="ki-lbl">Rentabilidade Anual</div><div class="ki-val">${cfg?d.rentAnual.toFixed(1)+"%":"—"}</div><div class="ki-sub">Sobre capital total investido</div></div>
-  <div class="ki ${d.margem>=20?"g":"a"}"><div class="ki-lbl">Lucratividade</div><div class="ki-val">${cfg?d.margem.toFixed(1)+"%":"—"}</div><div class="ki-sub">Margem líquida do período</div></div>
-  <div class="ki t"><div class="ki-lbl">Payback Estimado</div><div class="ki-val">${cfg?(d.mesesPay===Infinity?"—":d.mesesPay<12?Math.ceil(d.mesesPay)+"m":(d.mesesPay/12).toFixed(1)+"a"):"—"}</div><div class="ki-sub">Para amortizar saldo devedor</div></div>
+  <div class="ki ${d.rentAnual>=12?'g':'a'}"><div class="ki-lbl">Rentabilidade Anual</div><div class="ki-val">${cfg?d.rentAnual.toFixed(1)+"%":'—'}</div><div class="ki-sub">Sobre capital total investido</div></div>
+  <div class="ki ${d.margem>=20?'g':'a'}"><div class="ki-lbl">Lucratividade</div><div class="ki-val">${cfg?d.margem.toFixed(1)+"%":'—'}</div><div class="ki-sub">Margem líquida do período</div></div>
+  <div class="ki t"><div class="ki-lbl">Payback Estimado</div><div class="ki-val">${cfg?(d.mesesPay===Infinity?'—':d.mesesPay<12?Math.ceil(d.mesesPay)+'m':(d.mesesPay/12).toFixed(1)+'a'):'—'}</div><div class="ki-sub">Para amortizar saldo devedor</div></div>
   <div class="ki g"><div class="ki-lbl">Retorno Mensal Proj.</div><div class="ki-val">${cfg?brlFmt(d.retMensalInv):"—"}</div><div class="ki-sub">${invPct}% do lucro líquido</div></div>
-  <div class="ki ${d.faltaAmort<=0?"g":"t"}"><div class="ki-lbl">Saldo a Amortizar</div><div class="ki-val">${cfg?(d.faltaAmort<=0?"Quitado":brlFmt(d.faltaAmort)):"—"}</div><div class="ki-sub">${d.faltaAmort<=0?"✅ Payback concluído":"Baseado no Config DRE"}</div></div>
+  <div class="ki ${d.faltaAmort<=0?'g':'t'}"><div class="ki-lbl">Saldo a Amortizar</div><div class="ki-val">${cfg?(d.faltaAmort<=0?'Quitado':brlFmt(d.faltaAmort)):'—'}</div><div class="ki-sub">${d.faltaAmort<=0?'✅ Payback concluído':'Baseado no Config DRE'}</div></div>
   <div class="ki a"><div class="ki-lbl">Projeção Anual</div><div class="ki-val">${cfg?brlFmt(d.retMensalInv*12):"—"}</div><div class="ki-sub">Retorno anual estimado</div></div>
 </div>
 ${cfg?`<div class="payback-wrap">
@@ -2090,7 +2090,7 @@ ${cfg?`<div class="payback-wrap">
   <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:6px;"><span>R$ 0</span><span>${brlFmt(cfg.invAmort)} amortizado</span><span>${brlFmt(cfg.invTotal)}</span></div></div></div></div>
   <div class="payback-info">
     <div class="pb-card"><div class="pb-card-icon">📊</div><div class="pb-card-lbl">Investimento Total ${invNome}</div><div class="pb-card-val">${brlFmt(cfg.invTotal)}</div><div class="pb-card-sub">Já integralizado: ${brlFmt(cfg.invPago)}<br>Já amortizado: ${brlFmt(cfg.invAmort)}<br>Saldo devedor: <strong style="color:var(--amber)">${brlFmt(d.faltaAmort)}</strong></div></div>
-    <div class="pb-card"><div class="pb-card-icon">🎯</div><div class="pb-card-lbl">Previsão Payback Completo</div><div class="pb-card-val" style="color:var(--teal);font-size:22px;">${d.mesesPay===Infinity?"—":d.mesesPay<12?`${Math.ceil(d.mesesPay)} meses`:`~${(d.mesesPay/12).toFixed(0)} anos`}</div><div class="pb-card-sub">Projeção: ${brlFmt(d.retMensalInv)}/mês<br><span style="color:var(--green)">Após payback: ${brlFmt(d.retMensalInv)}/mês lucro puro</span></div></div>
+    <div class="pb-card"><div class="pb-card-icon">🎯</div><div class="pb-card-lbl">Previsão Payback Completo</div><div class="pb-card-val" style="color:var(--teal);font-size:22px;">${d.mesesPay===Infinity?'—':d.mesesPay<12?`${Math.ceil(d.mesesPay)} meses`:`~${(d.mesesPay/12).toFixed(0)} anos`}</div><div class="pb-card-sub">Projeção: ${brlFmt(d.retMensalInv)}/mês<br><span style="color:var(--green)">Após payback: ${brlFmt(d.retMensalInv)}/mês lucro puro</span></div></div>
     <div class="pb-card"><div class="pb-card-icon">📈</div><div class="pb-card-lbl">ROI Anual Estimado</div><div class="pb-card-val" style="color:var(--amber);font-size:22px;">${d.rentAnual.toFixed(1)}%</div><div class="pb-card-sub">${brlFmt(d.retMensalInv*12)}/ano<br>Sobre investimento total ${brlFmt(cfg.invTotal)}</div></div>
   </div>
 </div>`:""}
@@ -2101,11 +2101,11 @@ ${cfg?`<div class="payback-wrap">
   <div class="kpi"><div class="kpi-icon">🔌</div><div class="kpi-lbl">Sessões Realizadas</div><div class="kpi-val" style="color:var(--green)">${numFmt(d.totalSess)}</div><div class="kpi-detail">${sessPerDay.toFixed(1)}/dia · ${days} dias</div></div>
   <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">kWh Entregues</div><div class="kpi-val" style="color:var(--teal)">${numFmt(d.totalKwh)}</div><div class="kpi-detail">${kwhPerDay.toFixed(0)} kWh/dia</div></div>
   <div class="kpi"><div class="kpi-icon">💳</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(d.ticket)}</div><div class="kpi-detail">R$${d.priceKwh.toFixed(2)}/kWh</div></div>
-  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?"var(--green)":"var(--amber)}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} de ${stUsers.length} usuários</div></div>
+  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?'var(--green)':"var(--amber)}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} de ${stUsers.length} usuários</div></div>
 </div>
 <div class="kpi-grid cols3">
   <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-lbl">Usuários Únicos</div><div class="kpi-val" style="color:var(--purple)">${numFmt(stUsers.length)}</div><div class="kpi-detail">Base ativa no período</div></div>
-  <div class="kpi"><div class="kpi-icon">🚫</div><div class="kpi-lbl">Cancelamentos</div><div class="kpi-val" style="color:${cancelRate>0.08?"var(--red)":"var(--green)"}">${(cancelRate*100).toFixed(1)}%</div><div class="kpi-detail">${cancelled} sessões · meta &lt;8%</div></div>
+  <div class="kpi"><div class="kpi-icon">🚫</div><div class="kpi-lbl">Cancelamentos</div><div class="kpi-val" style="color:${cancelRate>0.08?'var(--red)':'var(--green)'}">${(cancelRate*100).toFixed(1)}%</div><div class="kpi-detail">${cancelled} sessões · meta &lt;8%</div></div>
   <div class="kpi"><div class="kpi-icon">📅</div><div class="kpi-lbl">Dias Operando</div><div class="kpi-val" style="color:var(--green)">${days}</div><div class="kpi-detail">De ${periodDays} dias do período</div></div>
 </div>
 </div>`;
@@ -2181,12 +2181,12 @@ function gerarRelatorioOpV2(sessions:Session[],appState:AppState,station:string)
      {val:cancelled.toString(),lbl:"Cancelamentos",sub:`Taxa ${(cancelRate*100).toFixed(1)}% · meta <8%`,cls:"p"}]
   );
   const sec03=`<div class="section">
-<div class="section-header"><div><div class="section-title">03 · Operação</div><div class="section-h2">Demanda & Uso</div></div><span class="section-tag tag-teal">${days} dias · ${days===periodDays?"0 dias zerados":`${periodDays-days} dias sem op.`}</span></div>
+<div class="section-header"><div><div class="section-title">03 · Operação</div><div class="section-h2">Demanda & Uso</div></div><span class="section-tag tag-teal">${days} dias · ${days===periodDays?'0 dias zerados':`${periodDays-days} dias sem op.`}</span></div>
 <div class="kpi-grid cols4" style="margin-bottom:32px;">
   <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">kWh Entregues</div><div class="kpi-val" style="color:var(--teal)">${numFmt(d.totalKwh)}</div><div class="kpi-detail">Média ${kwhPerDay.toFixed(0)} kWh/dia</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,kwhPerDay/300*100).toFixed(0)}%;background:var(--teal)"></div></div></div>
   <div class="kpi"><div class="kpi-icon">🔌</div><div class="kpi-lbl">Total de Sessões</div><div class="kpi-val" style="color:var(--green)">${numFmt(d.totalSess)}</div><div class="kpi-detail">Média ${sessPerDay.toFixed(1)}/dia</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,sessPerDay/metaSessDay*100).toFixed(0)}%;background:var(--green)"></div></div></div>
   <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">kWh / Sessão</div><div class="kpi-val" style="color:var(--amber)">${d.totalSess>0?(d.totalKwh/d.totalSess).toFixed(1):"0"}</div><div class="kpi-detail">Energia por carregamento</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:60%;background:var(--amber)"></div></div></div>
-  <div class="kpi"><div class="kpi-icon">🚫</div><div class="kpi-lbl">Cancelamentos</div><div class="kpi-val" style="color:${cancelRate>0.08?"var(--red)":"var(--green)"}">${cancelled}</div><div class="kpi-detail">Taxa ${(cancelRate*100).toFixed(1)}% · Meta &lt;8%</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,(cancelRate/0.08)*100).toFixed(0)}%;background:${cancelRate>0.08?"var(--red)":"var(--green)"}"></div></div></div>
+  <div class="kpi"><div class="kpi-icon">🚫</div><div class="kpi-lbl">Cancelamentos</div><div class="kpi-val" style="color:${cancelRate>0.08?'var(--red)':'var(--green)'}">${cancelled}</div><div class="kpi-detail">Taxa ${(cancelRate*100).toFixed(1)}% · Meta &lt;8%</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,(cancelRate/0.08)*100).toFixed(0)}%;background:${cancelRate>0.08?'var(--red)':'var(--green)'}"></div></div></div>
 </div>
 <div class="demanda-grid">
   <div class="dem-card"><div class="dem-card-tag pico-tag">📅 Melhor Dia</div><div class="dem-card-val" style="color:var(--amber)">${bestDayFmt}</div><div class="dem-card-sub">Receita: ${brlFmt(bestRev)}<br>Pico de demanda orgânico</div></div>
@@ -2202,8 +2202,8 @@ function gerarRelatorioOpV2(sessions:Session[],appState:AppState,station:string)
 <div class="section-header"><div><div class="section-title">04 · Base de Clientes</div><div class="section-h2">Usuários & Fidelização</div></div><span class="section-tag tag-green">${(recRate*100).toFixed(1)}% recorrentes</span></div>
 <div class="kpi-grid cols4" style="margin-bottom:32px;">
   <div class="kpi"><div class="kpi-icon">👥</div><div class="kpi-lbl">Usuários Únicos</div><div class="kpi-val" style="color:var(--teal)">${numFmt(stUsers.length)}</div><div class="kpi-detail">Base ativa no período</div></div>
-  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?"var(--green)":"var(--amber)}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} usuários retornantes</div></div>
-  <div class="kpi"><div class="kpi-icon">💳</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(d.ticket)}</div><div class="kpi-detail">Meta ≥ R$30 ${d.ticket>=30?"✓":"✗"}</div></div>
+  <div class="kpi"><div class="kpi-icon">🔄</div><div class="kpi-lbl">Taxa Recorrência</div><div class="kpi-val" style="color:${recRate>=0.5?'var(--green)':'var(--amber)'}">${(recRate*100).toFixed(1)}%</div><div class="kpi-detail">${recorrentes} usuários retornantes</div></div>
+  <div class="kpi"><div class="kpi-icon">💳</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(d.ticket)}</div><div class="kpi-detail">Meta ≥ R$30 ${d.ticket>=30?'✓':'✗'}</div></div>
   <div class="kpi"><div class="kpi-icon">📈</div><div class="kpi-lbl">LTV Anual Est.</div><div class="kpi-val" style="color:var(--purple)">${brlFmt(d.ticket*(d.totalSess/Math.max(stUsers.length,1))*12)}</div><div class="kpi-detail">Por usuário recorrente</div></div>
 </div>
 <div class="chart-grid cols2">
@@ -2279,7 +2279,7 @@ function gerarApresentacaoV2(sessions:Session[],appState:AppState):string{
 </div>
 <div style="background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);border-radius:12px;padding:28px;margin-top:8px;">
   <div style="font-size:10px;font-family:var(--mono);color:var(--green);letter-spacing:.15em;text-transform:uppercase;margin-bottom:12px;">🎯 Posicionamento HertzGo</div>
-  <div style="font-size:14px;color:var(--text1);line-height:1.8;">A HertzGo opera eletropostos <strong>DC 60kW + AC 22kW</strong> de alta potência em locais estratégicos de alto fluxo. Modelo validado com <strong style="color:var(--green)">${brlFmt(totalBruto)}</strong> de receita acumulada em <strong>${meses} ${meses===1?"mês":"meses"}</strong>, com <strong>${hubs.length} estações</strong> ativas. Sem concorrência estabelecida nos pontos que operamos.</div>
+  <div style="font-size:14px;color:var(--text1);line-height:1.8;">A HertzGo opera eletropostos <strong>DC 60kW + AC 22kW</strong> de alta potência em locais estratégicos de alto fluxo. Modelo validado com <strong style="color:var(--green)">${brlFmt(totalBruto)}</strong> de receita acumulada em <strong>${meses} ${meses===1?'mês':'meses'}</strong>, com <strong>${hubs.length} estações</strong> ativas. Sem concorrência estabelecida nos pontos que operamos.</div>
 </div>
 </div>`;
   const secRede=`<div class="section">
@@ -2390,7 +2390,7 @@ function TabRelatorio({sessions,appState,onAddSessions}:{sessions:Session[];appS
         </div>
         {/* Botão adicionar CSV */}
         <div>
-          <button onClick={()=>addRef.current?.click()} disabled={addingCsv} style={{background:addingCsv?"rgba(255,255,255,0.04)":"rgba(0,229,160,0.1)",border:`1px solid ${addingCsv?"rgba(255,255,255,0.1)":"rgba(0,229,160,0.3)"}`,color:addingCsv?T.text3:T.green,padding:"8px 16px",borderRadius:10,fontFamily:T.sans,fontSize:12,fontWeight:700,cursor:addingCsv?"not-allowed":"pointer"}}>
+          <button onClick={()=>addRef.current?.click()} disabled={addingCsv} style={{background:addingCsv?"rgba(255,255,255,0.04)":"rgba(0,229,160,0.1)",border:`1px solid ${addingCsv?'rgba(255,255,255,0.1)':'rgba(0,229,160,0.3)'}`,color:addingCsv?T.text3:T.green,padding:"8px 16px",borderRadius:10,fontFamily:T.sans,fontSize:12,fontWeight:700,cursor:addingCsv?"not-allowed":"pointer"}}>
             {addingCsv?"⏳ Adicionando...":"➕ Adicionar CSV"}
           </button>
           <input ref={addRef} type="file" accept=".csv,.txt,.xlsx,.xls" style={{display:"none"}} onChange={e=>{if(e.target.files?.[0])processAddCsv(e.target.files[0]);}}/>
