@@ -1583,461 +1583,518 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
 
 
 // ─── TAB RELATÓRIOS ──────────────────────────────────────────────────────────
-function TabRelatorio({sessions,appState}:{sessions:Session[];appState:AppState}){
-  const hubs=useMemo(()=>Array.from(new Set(sessions.map(s=>s.hubKey))).sort(),[sessions]);
-  const[station,setStation]=useState(hubs[0]||"");
-  const[gerando,setGerando]=useState(false);
-  const[preview,setPreview]=useState(false);
+const LOGO_URL="https://raw.githubusercontent.com/wagnervomiranda-lgtm/hertzgo-vision/main/Logo%20Atual.jpeg";
+const CSS_BASE=`
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+  :root{--bg:#080b10;--bg2:#0d1117;--bg3:#111820;--border:#1a2333;--border2:#243040;--text1:#e8f0f8;--text2:#7a94b0;--text3:#3d5268;--green:#00e676;--teal:#00bcd4;--amber:#ffab00;--red:#ff5252;--blue:#448aff;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{font-family:'Syne',sans-serif;color:var(--text1);background:var(--bg);padding:40px 48px;max-width:960px;margin:0 auto;font-size:13px;}
+  .cover{background:radial-gradient(ellipse 80% 60% at 60% 40%,rgba(0,188,212,.06) 0%,transparent 60%),var(--bg);border:1px solid var(--border);border-radius:16px;padding:40px;margin-bottom:32px;display:flex;justify-content:space-between;align-items:flex-start;}
+  .logo-img{height:44px;margin-bottom:16px;display:block;}
+  .station-name{font-size:22px;font-weight:800;color:var(--text1);letter-spacing:-.02em;margin-bottom:4px;}
+  .report-type{font-size:11px;color:var(--teal);letter-spacing:.18em;text-transform:uppercase;margin-bottom:16px;font-family:'DM Mono',monospace;}
+  .cover-line{width:48px;height:3px;background:linear-gradient(90deg,var(--green),var(--teal));border-radius:2px;margin:16px 0;}
+  .dest-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-family:'DM Mono',monospace;margin-bottom:4px;}
+  .dest-name{font-size:14px;font-weight:700;color:var(--text1);}
+  .cover-right{text-align:right;}
+  .badge-conf{background:rgba(255,82,82,.12);border:1px solid rgba(255,82,82,.25);color:#ff8a80;font-size:9px;font-family:'DM Mono',monospace;letter-spacing:.12em;padding:4px 10px;border-radius:4px;text-transform:uppercase;margin-bottom:12px;display:inline-block;}
+  .cover-meta{font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;line-height:2;text-align:right;}
+  .kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:28px;}
+  .ks{background:var(--bg2);padding:18px 16px;position:relative;}
+  .ks::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+  .ks.g::before{background:var(--green)}.ks.t::before{background:var(--teal)}.ks.a::before{background:var(--amber)}.ks.p::before{background:#7c4dff;}
+  .ks-val{font-size:20px;font-weight:800;font-family:'DM Mono',monospace;margin-bottom:2px;}
+  .ks.g .ks-val{color:var(--green)}.ks.t .ks-val{color:var(--teal)}.ks.a .ks-val{color:var(--amber)}.ks.p .ks-val{color:#7c4dff;}
+  .ks-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-family:'DM Mono',monospace;}
+  .ks-sub{font-size:10px;color:var(--text2);font-family:'DM Mono',monospace;margin-top:4px;}
+  .sec{margin-bottom:24px;}
+  .sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+  .sec-title{font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);letter-spacing:.18em;text-transform:uppercase;margin-bottom:2px;}
+  .sec-h2{font-size:18px;font-weight:800;letter-spacing:-.01em;}
+  .sec-tag{font-size:9px;font-family:'DM Mono',monospace;padding:3px 10px;border-radius:20px;letter-spacing:.08em;text-transform:uppercase;border:1px solid;}
+  .tag-g{color:var(--green);border-color:rgba(0,230,118,.3);background:rgba(0,230,118,.06);}
+  .tag-a{color:var(--amber);border-color:rgba(255,171,0,.3);background:rgba(255,171,0,.06);}
+  .tag-r{color:var(--red);border-color:rgba(255,82,82,.3);background:rgba(255,82,82,.06);}
+  table{width:100%;border-collapse:collapse;font-family:'DM Mono',monospace;font-size:12px;background:var(--bg2);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+  th{background:var(--bg3);color:var(--text3);padding:9px 14px;text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;border-bottom:1px solid var(--border);}
+  th:not(:first-child){text-align:right;}
+  td{padding:10px 14px;border-bottom:1px solid rgba(26,35,51,.5);color:var(--text2);}
+  td:not(:first-child){text-align:right;}
+  tr:last-child td{border-bottom:none;}
+  .row-result td{background:rgba(0,230,118,.04);border-top:1px solid rgba(0,230,118,.15);font-weight:700;}
+  .row-result td:first-child{color:var(--text1);}
+  .val-pos{color:var(--green)!important;}.val-neg{color:var(--red)!important;}.val-warn{color:var(--amber)!important;}.val-main{color:var(--text1)!important;font-weight:700;}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;}
+  .kpi{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;position:relative;overflow:hidden;}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--border2);}
+  .kpi.ok::before{background:var(--green)}.kpi.warn::before{background:var(--amber)}.kpi.crit::before{background:var(--red);}
+  .kpi-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-family:'DM Mono',monospace;margin-bottom:6px;}
+  .kpi-value{font-size:18px;font-weight:800;font-family:'DM Mono',monospace;margin-bottom:4px;}
+  .kpi.ok .kpi-value{color:var(--green)}.kpi.warn .kpi-value{color:var(--amber)}.kpi.crit .kpi-value{color:var(--red);}
+  .kpi-sub{font-size:10px;color:var(--text2);font-family:'DM Mono',monospace;}
+  .pb-wrap{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;}
+  .pb-track{height:24px;background:var(--bg2);border-radius:6px;overflow:hidden;position:relative;border:1px solid var(--border);}
+  .pb-fill{position:absolute;left:0;top:0;height:100%;background:var(--teal);border-radius:6px;}
+  .pb-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:'DM Mono',monospace;color:#fff;font-weight:600;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+  .card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;}
+  .card-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-family:'DM Mono',monospace;margin-bottom:8px;}
+  .card-val{font-size:22px;font-weight:800;font-family:'DM Mono',monospace;margin-bottom:4px;}
+  .card-sub{font-size:11px;color:var(--text2);}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .bar-label{font-size:10px;font-family:'DM Mono',monospace;color:var(--text2);width:30px;text-align:right;}
+  .bar-track{flex:1;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:3px;background:var(--teal);}
+  .bar-val{font-size:10px;font-family:'DM Mono',monospace;color:var(--text3);width:28px;}
+  .diag{background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.2);border-radius:10px;padding:16px;margin-bottom:16px;}
+  .diag-title{font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.1em;font-family:'DM Mono',monospace;margin-bottom:6px;}
+  .diag-text{font-size:12px;color:var(--text2);line-height:1.8;}
+  .semaforo-table{width:100%;font-family:'DM Mono',monospace;font-size:11px;border-collapse:collapse;}
+  .semaforo-table th{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);}
+  .semaforo-table td{padding:8px 10px;border-bottom:1px solid rgba(26,35,51,.4);color:var(--text2);}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}
+  .dot-g{background:var(--green)}.dot-a{background:var(--amber)}.dot-r{background:var(--red)}.dot-p{background:#7c4dff;}
+  .network-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px;}
+  .nk{background:var(--bg2);padding:16px;text-align:center;}
+  .nk-val{font-size:24px;font-weight:800;font-family:'DM Mono',monospace;color:var(--green);margin-bottom:2px;}
+  .nk-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-family:'DM Mono',monospace;}
+  .station-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:10px;}
+  .sc-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .sc-name{font-size:13px;font-weight:700;color:var(--text1);}
+  .sc-score{font-size:20px;font-weight:800;font-family:'DM Mono',monospace;}
+  .sc-bar{height:4px;background:var(--bg3);border-radius:2px;margin-bottom:8px;overflow:hidden;}
+  .sc-bar-fill{height:100%;border-radius:2px;}
+  .sc-meta{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;}
+  footer{margin-top:32px;padding-top:12px;border-top:1px solid var(--border);font-size:10px;color:var(--text3);display:flex;justify-content:space-between;font-family:'DM Mono',monospace;}
+  .print-btn{display:block;background:var(--green);color:#000;border:none;padding:10px 28px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:700;margin:20px auto 0;font-family:'Syne',sans-serif;letter-spacing:.04em;}
+  @media print{.print-btn{display:none!important;}body{background:var(--bg)!important;}}
+`;
 
-  const cfg=appState.dreConfigs[station]||null;
+function calcDRE(sessoes:Session[],cfg:DREConfig|null,periodDays:number){
+  const diasNoMes=30;
+  const bruto=sessoes.reduce((a,s)=>a+s.value,0);
+  const totalKwh=sessoes.reduce((a,s)=>a+s.energy,0);
+  const totalSess=sessoes.length;
+  const faturMensal=bruto/Math.max(periodDays,1)*diasNoMes;
+  const faturAnual=faturMensal*12;
+  const ticket=totalSess>0?bruto/totalSess:0;
+  const priceKwh=totalKwh>0?bruto/totalKwh:0;
+  if(!cfg)return{bruto,totalKwh,totalSess,faturMensal,faturAnual,ticket,priceKwh,ll:0,margem:0,repInv:0,repHz:bruto,retMensalInv:0,rentAnual:0,faltaAmort:0,mesesPay:Infinity,pTotal:0,dreRows:[] as {label:string;val:number;bold?:boolean;sep?:boolean}[]};
+  const aliq=cfg.modelo==="propria"?dreSimples(faturAnual):cfg.pctImposto;
+  const impostoVal=bruto*(aliq/100),custoEspaco=bruto*(cfg.pctEspaco/100),custoApp=bruto*(cfg.pctApp/100);
+  let custoEnergia=0;
+  if(!cfg.solarProprio){if(cfg.energiaTipo==="kwh")custoEnergia=totalKwh*cfg.energiaKwh;if(cfg.energiaTipo==="usina")custoEnergia=cfg.usinaFixo;}
+  const ll=bruto-custoEspaco-impostoVal-custoApp-custoEnergia-cfg.fixoInternet-cfg.fixoAluguel;
+  const margem=bruto>0?(ll/bruto)*100:0;
+  const repInv=cfg.modelo==="investidor"?ll*(cfg.invPct/100):0;
+  const repHz=cfg.modelo==="investidor"?ll*((100-cfg.invPct)/100):ll;
+  const retMensalInv=repInv/Math.max(periodDays,1)*diasNoMes;
+  const rentAnual=cfg.invTotal>0?(repInv/Math.max(periodDays,1)*diasNoMes*12/cfg.invTotal)*100:0;
+  const faltaAmort=Math.max(0,cfg.invTotal-cfg.invAmort);
+  const mesesPay=retMensalInv>0?faltaAmort/retMensalInv:Infinity;
+  const tot=cfg.invDividaPrio+(cfg.invTotal-cfg.invPago);
+  const pTotal=tot>0?Math.min(100,(cfg.invAmort/tot)*100):0;
+  const dreRows:{label:string;val:number;bold?:boolean;sep?:boolean}[]=[];
+  dreRows.push({label:"(+) Receita Bruta",val:bruto,bold:true});
+  if(cfg.pctEspaco>0)dreRows.push({label:`(−) Parceiro Espaço (${cfg.pctEspaco}%)`,val:-custoEspaco});
+  dreRows.push({label:`(−) Imposto (${aliq.toFixed(1)}%)`,val:-impostoVal});
+  dreRows.push({label:`(−) App/Plataforma (${cfg.pctApp}%)`,val:-custoApp});
+  if(cfg.energiaTipo!=="incluido"&&!cfg.solarProprio)dreRows.push({label:"(−) Energia",val:-custoEnergia});
+  if(cfg.fixoAluguel>0)dreRows.push({label:"(−) Aluguel",val:-cfg.fixoAluguel});
+  if(cfg.fixoInternet>0)dreRows.push({label:"(−) Internet/Adm",val:-cfg.fixoInternet});
+  dreRows.push({label:"= Lucro Líquido",val:ll,bold:true,sep:true});
+  if(cfg.modelo==="investidor"){dreRows.push({label:`→ ${cfg.invNome||"Investidor"} (${cfg.invPct}%)`,val:repInv});dreRows.push({label:"→ HertzGo (restante)",val:repHz,bold:true});}
+  return{bruto,totalKwh,totalSess,faturMensal,faturAnual,ticket,priceKwh,ll,margem,repInv,repHz,retMensalInv,rentAnual,faltaAmort,mesesPay,pTotal,dreRows};
+}
+
+function gerarHTMLBase(titulo:string,stationLabel:string,destLabel:string,destName:string,periodo:string,dataGer:string,periodDays:number,totalSess:number,totalKwh:number,bruto:string,body:string):string{
+  return`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>HertzGo · ${titulo}</title><style>${CSS_BASE}</style></head><body>
+<div class="cover">
+  <div class="cover-left">
+    <img src="${LOGO_URL}" class="logo-img" alt="HertzGo" crossorigin="anonymous">
+    <div class="report-type">${titulo}</div>
+    <div class="station-name">${stationLabel}</div>
+    <div class="cover-line"></div>
+    <div class="dest-label">${destLabel}</div><div class="dest-name">${destName}</div>
+  </div>
+  <div class="cover-right">
+    <div class="badge-conf">Confidencial</div>
+    <div class="cover-meta">Gerado em: ${dataGer}<br>Período: ${periodo}<br>${periodDays} dias · ${totalSess} sessões<br>${totalKwh} kWh · ${bruto}</div>
+  </div>
+</div>
+${body}
+<button class="print-btn" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+<footer><span>⚡ HertzGo · Rede de Eletropostos · Brasília</span><span>Confidencial · Uso Restrito</span></footer>
+</body></html>`;
+}
+
+function gerarResumExecutivo(sessions:Session[],appState:AppState,station:string):string{
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
   const sessoes=ok.filter(s=>s.hubKey===station);
+  const cfg=appState.dreConfigs[station]||null;
   const datas=sessoes.map(s=>s.date.getTime());
   const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
   const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
   const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
-  const bruto=sessoes.reduce((a,s)=>a+s.value,0);
-  const totalKwh=sessoes.reduce((a,s)=>a+s.energy,0);
-  const totalSess=sessoes.length;
   const days=new Set(sessoes.map(s=>s.date.toDateString())).size||1;
-  const ticket=totalSess>0?bruto/totalSess:0;
-  const priceKwh=totalKwh>0?bruto/totalKwh:0;
-  const diasNoMes=30;
-  const faturMensal=bruto/periodDays*diasNoMes;
-  const faturAnual=faturMensal*12;
+  const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
+  const dataGer=new Date().toLocaleDateString("pt-BR");
+  const d=calcDRE(sessoes,cfg,periodDays);
   const hs=calcHealthScore(sessions,cfg,station);
-  const users=useMemo(()=>classificarUsuarios(ok),[ok]);
+  const hsColor=hs.status==="saudavel"?"var(--green)":hs.status==="atencao"?"var(--amber)":"var(--red)";
+  const users=classificarUsuarios(ok);
   const stUsers=users.filter(u=>u.localFreqKey===station);
-  const motoristas=stUsers.filter(u=>u.isMotorista);
-  const heavys=stUsers.filter(u=>u.isHeavy);
-  const parceiros=stUsers.filter(u=>u.isParceiro);
-  const shoppers=stUsers.filter(u=>!u.isParceiro&&!u.isMotorista&&!u.isHeavy);
   const top5=stUsers.sort((a,b)=>b.rev-a.rev).slice(0,5);
+  const cancelled=sessions.filter(s=>s.hubKey===station&&s.cancelled).length;
+  const totalAll=sessions.filter(s=>s.hubKey===station).length;
+  const cancelRate=totalAll>0?cancelled/totalAll:0;
   const hourData=Array(24).fill(0).map(()=>({sess:0}));
   sessoes.forEach(s=>{if(s.startHour!==null)hourData[s.startHour].sess++;});
   const maxHour=Math.max(...hourData.map(h=>h.sess),1);
-  const cancelled=sessions.filter(s=>s.hubKey===station&&s.cancelled).length;
-  const cancelRate=sessions.filter(s=>s.hubKey===station).length>0?cancelled/sessions.filter(s=>s.hubKey===station).length:0;
+  const recorrentes=stUsers.filter(u=>u.sess>1).length;
+  const recRate=stUsers.length>0?recorrentes/stUsers.length:0;
+  const sessPerDay=d.totalSess/days;
+  const kwhPerDay=d.totalKwh/days;
+  // Semáforo de metas
+  const metas=appState.metas||{};
+  const metaSessDay=metas[`${station}_sessDay`]||12;
+  const metaRevDay=metas[`${station}_revDay`]||350;
+  const metaCancel=metas[`${station}_cancel`]||8;
+  const metaRec=metas[`${station}_rec`]||50;
+  const semStatus=(val:number,meta:number,invert=false)=>invert?(val<=meta?"ok":val<=meta*1.5?"warn":"crit"):(val>=meta?"ok":val>=meta*0.85?"warn":"crit");
+  const semLabel=(s:string)=>s==="ok"?"✅ Meta atingida":s==="warn"?"⚠️ Atenção":"🔴 Crítico";
+  const dreTableRows=d.dreRows.map(r=>`<tr class="${r.sep?"row-result":""}"><td class="${r.bold?"val-main":""}">${r.label}</td><td class="${r.val>=0?"val-pos":"val-neg"}">${brl(r.val)}</td><td>${brl(r.val/periodDays*30)}</td><td>${d.bruto>0?Math.abs(r.val/d.bruto*100).toFixed(1)+"%":"—"}</td></tr>`).join("");
+  const hourBars=hourData.map((h,i)=>`<div class="bar-row"><div class="bar-label">${i}h</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(h.sess/maxHour*100)}%;background:${h.sess===maxHour?"var(--green)":h.sess>maxHour*0.6?"var(--teal)":"var(--border2)"};"></div></div><div class="bar-val">${h.sess}</div></div>`).join("");
+  const top5rows=top5.map((u,i)=>`<tr><td><span style="color:${["var(--amber)","var(--text2)","#b47c3c","var(--text3)","var(--text3)"][i]};font-weight:700;">${i+1}.</span> ${u.user}</td><td class="val-pos">${brl(u.rev)}</td><td>${u.sess}</td><td>${u.kwh.toFixed(0)} kWh</td></tr>`).join("");
+  const body=`
+<div class="kpi-strip">
+  <div class="ks g"><div class="ks-val">${brl(d.bruto)}</div><div class="ks-lbl">Receita Bruta</div><div class="ks-sub">${brl(d.faturMensal)}/mês proj.</div></div>
+  <div class="ks t"><div class="ks-val">${cfg?brl(d.ll):"—"}</div><div class="ks-lbl">Lucro Líquido</div><div class="ks-sub">${cfg?`Margem ${d.margem.toFixed(1)}%`:"Config DRE"}</div></div>
+  <div class="ks a"><div class="ks-val">${d.totalSess}</div><div class="ks-lbl">Sessões</div><div class="ks-sub">${sessPerDay.toFixed(1)}/dia · ${days} dias op.</div></div>
+  <div class="ks p"><div class="ks-val">${d.totalKwh.toFixed(0)}</div><div class="ks-lbl">kWh Entregues</div><div class="ks-sub">${kwhPerDay.toFixed(0)} kWh/dia</div></div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Health Score</div><div class="sec-h2">Diagnóstico da Estação</div></div><span class="sec-tag" style="color:${hsColor};border-color:${hsColor}40;background:${hsColor}10;">${hs.total}/100 · ${hs.status.toUpperCase()}</span></div>
+  <div class="grid2">
+    <div class="card"><div class="card-label">Station Health Score</div><div class="card-val" style="color:${hsColor}">${hs.total}/100</div><div class="card-sub">${hs.diagnostico}</div></div>
+    <div class="card"><div class="card-label">Eficiência kWh</div><div class="card-val" style="color:var(--teal)">R$${d.priceKwh.toFixed(2)}/kWh</div><div class="card-sub">Preço médio realizado no período</div></div>
+  </div>
+  <div class="diag"><div class="diag-title">⚡ Diagnóstico Executivo</div><div class="diag-text">Margem líquida de <strong style="color:var(--green)">${d.margem.toFixed(1)}%</strong> sobre receita bruta de ${brl(d.bruto)}. Projeção mensal de <strong style="color:var(--green)">${brl(d.faturMensal)}</strong> e anual de <strong style="color:var(--green)">${brl(d.faturAnual)}</strong>. ${d.margem>=20?"Operação saudável com margem acima da meta mínima de 20%.":d.margem>=10?"Margem abaixo do ideal — revisar custos operacionais.":"Atenção: margem crítica — ação imediata necessária."}</div></div>
+</div>
+${cfg?`<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Demonstrativo de Resultado</div><div class="sec-h2">DRE do Período</div></div></div>
+  <table><tr><th>Item</th><th>No Período</th><th>Proj. Mensal</th><th>% Bruto</th></tr>${dreTableRows}</table>
+</div>`:""}
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Gestão por Indicadores</div><div class="sec-h2">Metas & Semáforo</div></div></div>
+  <table class="semaforo-table">
+    <tr><th>Indicador</th><th>Realizado</th><th>Meta</th><th>Status</th></tr>
+    <tr><td>Sessões/dia</td><td>${sessPerDay.toFixed(1)}</td><td>≥ ${metaSessDay}/dia</td><td><span class="dot dot-${semStatus(sessPerDay,metaSessDay)==="ok"?"g":semStatus(sessPerDay,metaSessDay)==="warn"?"a":"r"}"></span>${semLabel(semStatus(sessPerDay,metaSessDay))}</td></tr>
+    <tr><td>Receita/dia</td><td>${brl(d.bruto/days)}</td><td>≥ ${brl(metaRevDay)}/dia</td><td><span class="dot dot-${semStatus(d.bruto/days,metaRevDay)==="ok"?"g":semStatus(d.bruto/days,metaRevDay)==="warn"?"a":"r"}"></span>${semLabel(semStatus(d.bruto/days,metaRevDay))}</td></tr>
+    <tr><td>Cancelamentos</td><td>${(cancelRate*100).toFixed(1)}%</td><td>&lt; ${metaCancel}%</td><td><span class="dot dot-${semStatus(cancelRate*100,metaCancel,true)==="ok"?"g":semStatus(cancelRate*100,metaCancel,true)==="warn"?"a":"r"}"></span>${semLabel(semStatus(cancelRate*100,metaCancel,true))}</td></tr>
+    <tr><td>Taxa Recorrência</td><td>${(recRate*100).toFixed(1)}%</td><td>≥ ${metaRec}%</td><td><span class="dot dot-${semStatus(recRate*100,metaRec)==="ok"?"g":semStatus(recRate*100,metaRec)==="warn"?"a":"r"}"></span>${semLabel(semStatus(recRate*100,metaRec))}</td></tr>
+    <tr><td>Ticket Médio</td><td>${brl(d.ticket)}</td><td>≥ R$30</td><td><span class="dot dot-${semStatus(d.ticket,30)==="ok"?"g":"a"}"></span>${semLabel(semStatus(d.ticket,30))}</td></tr>
+    <tr><td>kWh/dia</td><td>${kwhPerDay.toFixed(0)} kWh</td><td>≥ 200 kWh/dia</td><td><span class="dot dot-${semStatus(kwhPerDay,200)==="ok"?"g":semStatus(kwhPerDay,200)==="warn"?"a":"r"}"></span>${semLabel(semStatus(kwhPerDay,200))}</td></tr>
+  </table>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Usuários · ${stUsers.length} únicos</div><div class="sec-h2">Top 5 por Receita</div></div></div>
+  <table><tr><th>Usuário</th><th>Receita</th><th>Sessões</th><th>kWh</th></tr>${top5rows}</table>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Operação</div><div class="sec-h2">Distribuição por Horário</div></div></div>
+  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;">${hourBars}</div>
+</div>`;
+  return gerarHTMLBase("Resumo Executivo",hubNome(station),"Gestão Interna","HertzGo Operations",periodo,dataGer,periodDays,d.totalSess,Math.round(d.totalKwh),brl(d.bruto),body);
+}
 
-  // DRE calculado
-  let ll=bruto,margem=0,repInv=0,repHz=bruto,retMensalInv=0,rentAnual=0,mesesPay=Infinity,faltaAmort=0;
-  let pTotal=0;
-  const dreRows:{label:string;val:number;bold?:boolean;sep?:boolean}[]=[];
-  if(cfg){
-    const aliq=cfg.modelo==="propria"?dreSimples(faturAnual):cfg.pctImposto;
-    const impostoVal=bruto*(aliq/100),custoEspaco=bruto*(cfg.pctEspaco/100),custoApp=bruto*(cfg.pctApp/100);
-    let custoEnergia=0;
-    if(!cfg.solarProprio){if(cfg.energiaTipo==="kwh")custoEnergia=totalKwh*cfg.energiaKwh;if(cfg.energiaTipo==="usina")custoEnergia=cfg.usinaFixo;}
-    ll=bruto-custoEspaco-impostoVal-custoApp-custoEnergia-cfg.fixoInternet-cfg.fixoAluguel;
-    margem=bruto>0?(ll/bruto)*100:0;
-    repInv=cfg.modelo==="investidor"?ll*(cfg.invPct/100):0;
-    repHz=cfg.modelo==="investidor"?ll*((100-cfg.invPct)/100):ll;
-    retMensalInv=repInv/periodDays*diasNoMes;
-    rentAnual=cfg.invTotal>0?(repInv/cfg.invTotal)*100*(diasNoMes/periodDays)*12:0;
-    faltaAmort=Math.max(0,cfg.invTotal-cfg.invAmort);
-    mesesPay=retMensalInv>0?faltaAmort/retMensalInv:Infinity;
-    const tot=cfg.invDividaPrio+(cfg.invTotal-cfg.invPago);
-    pTotal=tot>0?Math.min(100,(cfg.invAmort/tot)*100):0;
-    dreRows.push({label:"(+) Receita Bruta",val:bruto,bold:true});
-    if(cfg.pctEspaco>0)dreRows.push({label:`(−) Parceiro Espaço (${cfg.pctEspaco}%)`,val:-custoEspaco});
-    dreRows.push({label:`(−) Imposto (${aliq.toFixed(1)}%)`,val:-impostoVal});
-    dreRows.push({label:`(−) App/Plataforma (${cfg.pctApp}%)`,val:-custoApp});
-    if(cfg.energiaTipo!=="incluido")dreRows.push({label:"(−) Energia",val:-custoEnergia});
-    if(cfg.fixoAluguel>0)dreRows.push({label:"(−) Aluguel",val:-cfg.fixoAluguel});
-    if(cfg.fixoInternet>0)dreRows.push({label:"(−) Internet/Adm",val:-cfg.fixoInternet});
-    dreRows.push({label:"= Lucro Líquido",val:ll,bold:true,sep:true});
-    if(cfg.modelo==="investidor")dreRows.push({label:`→ Investidor (${cfg.invPct}%)`,val:repInv});
-    dreRows.push({label:`→ HertzGo`,val:repHz,bold:true});
-  }
-
-  const tipo=ESTACAO_TIPO[station]||"contratual";
-  const hsColor=hs.status==="saudavel"?"#00e5a0":hs.status==="atencao"?"#f59e0b":"#ef4444";
-  const hsEmoji=hs.status==="saudavel"?"🟢":hs.status==="atencao"?"🟡":"🔴";
-  const tendencia=()=>{
-    const d1=sessoes.filter(s=>s.date.getTime()<(dtMin.getTime()+dtMax.getTime())/2);
-    const d2=sessoes.filter(s=>s.date.getTime()>=(dtMin.getTime()+dtMax.getTime())/2);
-    const r1=d1.reduce((a,s)=>a+s.value,0)/Math.max(d1.length,1);
-    const r2=d2.reduce((a,s)=>a+s.value,0)/Math.max(d2.length,1);
-    if(r2>r1*1.05)return{label:"📈 Crescendo",color:"#00e5a0"};
-    if(r2<r1*0.95)return{label:"📉 Caindo",color:"#ef4444"};
-    return{label:"➡️ Estável",color:"#f59e0b"};
-  };
-  const trend=tendencia();
+function gerarRelatorioSocio(sessions:Session[],appState:AppState,station:string):string{
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const sessoes=ok.filter(s=>s.hubKey===station);
+  const cfg=appState.dreConfigs[station]||null;
+  const datas=sessoes.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const days=new Set(sessoes.map(s=>s.date.toDateString())).size||1;
   const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
+  const dataGer=new Date().toLocaleDateString("pt-BR");
+  const d=calcDRE(sessoes,cfg,periodDays);
+  const invNome=cfg?.invNome||"Investidor";
+  const invPct=cfg?.invPct||50;
+  const dreTableRows=d.dreRows.map(r=>`<tr class="${r.sep?"row-result":""}"><td class="${r.bold?"val-main":""}">${r.label}</td><td class="${r.val>=0?"val-pos":"val-neg"}">${brl(r.val)}</td><td>${brl(r.val/periodDays*30)}</td><td>${d.bruto>0?Math.abs(r.val/d.bruto*100).toFixed(1)+"%":"—"}</td></tr>`).join("");
+  const payStatus=d.mesesPay<=24?"ok":d.mesesPay<=48?"warn":"crit";
+  const payColor=payStatus==="ok"?"var(--green)":payStatus==="warn"?"var(--amber)":"var(--red)";
+  const body=`
+<div class="kpi-strip">
+  <div class="ks g"><div class="ks-val">${brl(d.bruto)}</div><div class="ks-lbl">Receita Bruta</div><div class="ks-sub">${brl(d.faturMensal)}/mês proj.</div></div>
+  <div class="ks t"><div class="ks-val">${cfg?brl(d.ll):"—"}</div><div class="ks-lbl">Lucro Líquido</div><div class="ks-sub">${cfg?`Margem ${d.margem.toFixed(1)}%`:"Config DRE"}</div></div>
+  <div class="ks a"><div class="ks-val">${cfg?brl(d.repInv):"—"}</div><div class="ks-lbl">${invNome} (${invPct}%)</div><div class="ks-sub">${cfg?`${brl(d.retMensalInv)}/mês proj.`:"Config DRE"}</div></div>
+  <div class="ks p"><div class="ks-val">${cfg?brl(d.repHz):"—"}</div><div class="ks-lbl">HertzGo (restante)</div><div class="ks-sub">Operação e tecnologia</div></div>
+</div>
+${cfg?`
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Demonstrativo de Resultado</div><div class="sec-h2">DRE do Período</div></div></div>
+  <table><tr><th>Item</th><th>No Período</th><th>Proj. Mensal</th><th>% Bruto</th></tr>${dreTableRows}</table>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Retorno do Investimento</div><div class="sec-h2">KPIs do Sócio</div></div></div>
+  <div class="kpis">
+    <div class="kpi ${d.rentAnual>=12?"ok":d.rentAnual>=6?"warn":"crit"}"><div class="kpi-label">Rentabilidade Anual</div><div class="kpi-value">${d.rentAnual.toFixed(1)}%</div><div class="kpi-sub">Sobre capital total investido</div></div>
+    <div class="kpi ${d.margem>=20?"ok":d.margem>=10?"warn":"crit"}"><div class="kpi-label">Lucratividade</div><div class="kpi-value">${d.margem.toFixed(1)}%</div><div class="kpi-sub">Margem líquida do período</div></div>
+    <div class="kpi ${payStatus}"><div class="kpi-label">Payback Estimado</div><div class="kpi-value">${d.mesesPay===Infinity?"—":d.mesesPay<12?`${Math.ceil(d.mesesPay)}m`:`${(d.mesesPay/12).toFixed(1)}a`}</div><div class="kpi-sub">Para amortizar saldo devedor</div></div>
+    <div class="kpi ${d.retMensalInv>0?"ok":"warn"}"><div class="kpi-label">Retorno Mensal Proj.</div><div class="kpi-value">${brl(d.retMensalInv)}</div><div class="kpi-sub">Base 30 dias · ${invPct}% do LL</div></div>
+    <div class="kpi ${d.faltaAmort<=0?"ok":"warn"}"><div class="kpi-label">Saldo a Amortizar</div><div class="kpi-value">${d.faltaAmort<=0?"Quitado":brl(d.faltaAmort)}</div><div class="kpi-sub">${d.faltaAmort<=0?"✅ Payback concluído":"Baseado no config DRE"}</div></div>
+    <div class="kpi ok"><div class="kpi-label">Projeção Anual</div><div class="kpi-value">${brl(d.retMensalInv*12)}</div><div class="kpi-sub">Retorno anual projetado</div></div>
+  </div>
+  <div class="pb-wrap">
+    <div style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;margin-bottom:12px;font-weight:600;">Progresso do Payback — ${d.pTotal.toFixed(1)}% amortizado</div>
+    <div class="pb-track"><div class="pb-fill" style="width:${Math.min(100,d.pTotal)}%;background:${payColor};"></div><div class="pb-label">${d.pTotal.toFixed(1)}% realizado</div></div>
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;line-height:1.8;">
+      <span>Investimento Total: <strong style="color:var(--text1)">${brl(cfg.invTotal)}</strong></span>
+      <span>Já Integralizado: <strong style="color:var(--text1)">${brl(cfg.invPago)}</strong></span>
+      <span>Já Amortizado: <strong style="color:var(--green)">${brl(cfg.invAmort)}</strong></span>
+      <span>Saldo Devedor: <strong style="color:${d.faltaAmort<=0?"var(--green)":"var(--amber)"}">${d.faltaAmort<=0?"Quitado":brl(d.faltaAmort)}</strong></span>
+    </div>
+  </div>
+</div>`:"<div class='diag'><div class='diag-title'>⚙️ DRE não configurado</div><div class='diag-text'>Configure o DRE desta estação em Config → DRE Config para visualizar os KPIs do sócio.</div></div>"}
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Operação · ${periodDays} dias</div><div class="sec-h2">Performance do Período</div></div></div>
+  <div class="kpis">
+    <div class="kpi ok"><div class="kpi-label">Total Sessões</div><div class="kpi-value">${d.totalSess}</div><div class="kpi-sub">${(d.totalSess/days).toFixed(1)} sessões/dia</div></div>
+    <div class="kpi ok"><div class="kpi-label">kWh Entregues</div><div class="kpi-value">${d.totalKwh.toFixed(0)}</div><div class="kpi-sub">${(d.totalKwh/days).toFixed(0)} kWh/dia</div></div>
+    <div class="kpi ok"><div class="kpi-label">Ticket Médio</div><div class="kpi-value">${brl(d.ticket)}</div><div class="kpi-sub">Por sessão realizada</div></div>
+  </div>
+</div>`;
+  return gerarHTMLBase("Relatório ao Sócio / Investidor",hubNome(station),"Apresentado a",invNome,periodo,dataGer,periodDays,d.totalSess,Math.round(d.totalKwh),brl(d.bruto),body);
+}
 
-  const gerarPDF=async()=>{
-    setGerando(true);
+function gerarRelatorioOperacional(sessions:Session[],appState:AppState,station:string):string{
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const sessoes=ok.filter(s=>s.hubKey===station);
+  const cfg=appState.dreConfigs[station]||null;
+  const datas=sessoes.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const days=new Set(sessoes.map(s=>s.date.toDateString())).size||1;
+  const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
+  const dataGer=new Date().toLocaleDateString("pt-BR");
+  const d=calcDRE(sessoes,cfg,periodDays);
+  const cancelled=sessions.filter(s=>s.hubKey===station&&s.cancelled).length;
+  const totalAll=sessions.filter(s=>s.hubKey===station).length;
+  const cancelRate=totalAll>0?cancelled/totalAll:0;
+  const hourData=Array(24).fill(0).map(()=>({sess:0}));
+  sessoes.forEach(s=>{if(s.startHour!==null)hourData[s.startHour].sess++;});
+  const maxHour=Math.max(...hourData.map(h=>h.sess),1);
+  const dowData=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(l=>({l,sess:0}));
+  sessoes.forEach(s=>dowData[s.date.getDay()].sess++);
+  const maxDow=Math.max(...dowData.map(d=>d.sess),1);
+  const users=classificarUsuarios(ok);
+  const stUsers=users.filter(u=>u.localFreqKey===station);
+  const recorrentes=stUsers.filter(u=>u.sess>1).length;
+  const recRate=stUsers.length>0?recorrentes/stUsers.length:0;
+  const hourBars=hourData.map((h,i)=>`<div class="bar-row"><div class="bar-label">${i}h</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(h.sess/maxHour*100)}%;background:${h.sess===maxHour?"var(--green)":h.sess>maxHour*0.6?"var(--teal)":"var(--border2)"};"></div></div><div class="bar-val">${h.sess}</div></div>`).join("");
+  const dowBars=dowData.map(dw=>`<div class="bar-row"><div class="bar-label" style="width:28px">${dw.l}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(dw.sess/maxDow*100)}%;background:var(--teal);"></div></div><div class="bar-val">${dw.sess}</div></div>`).join("");
+  const body=`
+<div class="kpi-strip">
+  <div class="ks g"><div class="ks-val">${d.totalSess}</div><div class="ks-lbl">Total Sessões</div><div class="ks-sub">${(d.totalSess/days).toFixed(1)}/dia · ${days} dias op.</div></div>
+  <div class="ks t"><div class="ks-val">${d.totalKwh.toFixed(0)}</div><div class="ks-lbl">kWh Entregues</div><div class="ks-sub">${(d.totalKwh/days).toFixed(0)} kWh/dia</div></div>
+  <div class="ks a"><div class="ks-val">${brl(d.ticket)}</div><div class="ks-lbl">Ticket Médio</div><div class="ks-sub">R$${d.priceKwh.toFixed(2)}/kWh</div></div>
+  <div class="ks p"><div class="ks-val">${(cancelRate*100).toFixed(1)}%</div><div class="ks-lbl">Cancelamentos</div><div class="ks-sub">${cancelled} sessões · meta &lt;8%</div></div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Eficiência Operacional</div><div class="sec-h2">KPIs Detalhados</div></div></div>
+  <div class="kpis">
+    <div class="kpi ${cancelRate<=0.08?"ok":cancelRate<=0.15?"warn":"crit"}"><div class="kpi-label">Taxa Cancelamento</div><div class="kpi-value">${(cancelRate*100).toFixed(1)}%</div><div class="kpi-sub">Meta &lt; 8% · ${cancelled} sessões</div></div>
+    <div class="kpi ${recRate>=0.5?"ok":recRate>=0.35?"warn":"crit"}"><div class="kpi-label">Taxa Recorrência</div><div class="kpi-value">${(recRate*100).toFixed(1)}%</div><div class="kpi-sub">${recorrentes} usuários retornantes</div></div>
+    <div class="kpi ok"><div class="kpi-label">Usuários Únicos</div><div class="kpi-value">${stUsers.length}</div><div class="kpi-sub">Base ativa no período</div></div>
+    <div class="kpi ok"><div class="kpi-label">kWh/Sessão</div><div class="kpi-value">${d.totalSess>0?(d.totalKwh/d.totalSess).toFixed(1):0}</div><div class="kpi-sub">Energia média por carregamento</div></div>
+    <div class="kpi ok"><div class="kpi-label">Dias Operando</div><div class="kpi-value">${days}</div><div class="kpi-sub">De ${periodDays} dias do período</div></div>
+    <div class="kpi ok"><div class="kpi-label">Receita Bruta</div><div class="kpi-value">${brl(d.bruto)}</div><div class="kpi-sub">${brl(d.faturMensal)}/mês proj.</div></div>
+  </div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Distribuição Temporal</div><div class="sec-h2">Horários de Pico</div></div></div>
+  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;">${hourBars}</div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Distribuição Semanal</div><div class="sec-h2">Sessões por Dia da Semana</div></div></div>
+  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:16px;">${dowBars}</div>
+</div>`;
+  return gerarHTMLBase("Relatório Operacional",hubNome(station),"Uso Interno","HertzGo Operations",periodo,dataGer,periodDays,d.totalSess,Math.round(d.totalKwh),brl(d.bruto),body);
+}
+
+function gerarApresentacao(sessions:Session[],appState:AppState):string{
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const hubs=Array.from(new Set(ok.map(s=>s.hubKey)));
+  const totalBruto=ok.reduce((a,s)=>a+s.value,0);
+  const totalKwh=ok.reduce((a,s)=>a+s.energy,0);
+  const totalSess=ok.length;
+  const datas=ok.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const meses=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000/30));
+  const dataGer=new Date().toLocaleDateString("pt-BR");
+  const users=classificarUsuarios(ok);
+  const recorrentes=users.filter(u=>u.sess>1).length;
+  const recRate=users.length>0?recorrentes/users.length:0;
+  const stationCards=hubs.map(h=>{
+    const s=ok.filter(x=>x.hubKey===h);
+    const rev=s.reduce((a,x)=>a+x.value,0);
+    const cfg=appState.dreConfigs[h]||null;
+    const hs=calcHealthScore(sessions,cfg,h);
+    const hsColor=hs.status==="saudavel"?"var(--green)":hs.status==="atencao"?"var(--amber)":"var(--red)";
+    const tipo=(ESTACAO_TIPO as Record<string,string>)[h]||"contratual";
+    return`<div class="station-card"><div class="sc-header"><div class="sc-name">${hubNome(h)}<span style="font-size:9px;font-family:'DM Mono';color:var(--text3);margin-left:8px;">${tipo}</span></div><div class="sc-score" style="color:${hsColor}">${hs.total}</div></div><div class="sc-bar"><div class="sc-bar-fill" style="width:${hs.total}%;background:${hsColor};"></div></div><div class="sc-meta">${s.length} sessões · ${brl(rev)} · ${(rev/Math.max(meses,1)).toFixed(0)}/mês</div></div>`;
+  }).join("");
+  const body=`
+<div class="network-kpi">
+  <div class="nk"><div class="nk-val">${hubs.length}</div><div class="nk-lbl">Estações Ativas</div></div>
+  <div class="nk"><div class="nk-val">${brl(totalBruto)}</div><div class="nk-lbl">Receita Acumulada</div></div>
+  <div class="nk"><div class="nk-val">${totalSess}</div><div class="nk-lbl">Sessões Realizadas</div></div>
+  <div class="nk"><div class="nk-val">${totalKwh.toFixed(0)} kWh</div><div class="nk-lbl">Energia Entregue</div></div>
+  <div class="nk"><div class="nk-val">${users.length}</div><div class="nk-lbl">Usuários na Rede</div></div>
+  <div class="nk"><div class="nk-val">${(recRate*100).toFixed(0)}%</div><div class="nk-lbl">Taxa Recorrência</div></div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">A Oportunidade</div><div class="sec-h2">Mercado EV no Brasil</div></div></div>
+  <div class="grid2">
+    <div class="card"><div class="card-label">Crescimento da frota EV</div><div class="card-val" style="color:var(--green)">+180%</div><div class="card-sub">Crescimento anual de EVs no Brasil · demanda crescente por infraestrutura</div></div>
+    <div class="card"><div class="card-label">Gap de infraestrutura</div><div class="card-val" style="color:var(--amber)">1:8</div><div class="card-sub">Um eletroposto para cada 8 EVs em circulação · janela de entrada única</div></div>
+  </div>
+  <div class="diag"><div class="diag-title">🎯 Posicionamento HertzGo</div><div class="diag-text">A HertzGo opera eletropostos DC+AC de alta potência em locais estratégicos de alto fluxo — supermercados, shoppings, condomínios e centros automotivos. Modelo validado em ${hubs.length} estações ativas com receita acumulada de ${brl(totalBruto)} em ${meses} ${meses===1?"mês":"meses"} de operação.</div></div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">A Rede em Operação</div><div class="sec-h2">Performance por Estação</div></div></div>
+  ${stationCards}
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">O Modelo de Negócio</div><div class="sec-h2">Como Funciona</div></div></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+    <div class="card"><div class="card-label" style="color:var(--green)">📍 Localização</div><div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:8px;">Pontos estratégicos de alto fluxo · espaço cedido por parceiros · infraestrutura existente</div></div>
+    <div class="card"><div class="card-label" style="color:var(--teal)">⚡ Operação</div><div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:8px;">HertzGo gerencia 100% da operação · manutenção · CRM · atendimento · tecnologia</div></div>
+    <div class="card"><div class="card-label" style="color:var(--amber)">💰 Retorno</div><div style="font-size:12px;color:var(--text2);line-height:1.8;margin-top:8px;">Distribuição mensal do resultado · transparência total · relatórios periódicos</div></div>
+  </div>
+  <div class="diag" style="background:rgba(0,230,118,.06);border-color:rgba(0,230,118,.2);">
+    <div class="diag-title" style="color:var(--green)">✅ Diferenciais Competitivos</div>
+    <div class="diag-text">Modelo de receita comprovado · Gestão profissional com dashboard em tempo real · Equipamentos DC 60kW + AC 22kW · Contrato com garantias reais · Equipe dedicada de operação e CRM · Rede em expansão com modelo replicável</div>
+  </div>
+</div>
+<div class="sec">
+  <div class="sec-hdr"><div><div class="sec-title">Próximo Passo</div><div class="sec-h2">Vamos Conversar?</div></div></div>
+  <div style="text-align:center;padding:32px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;">
+    <div style="font-size:32px;margin-bottom:16px;">🚀</div>
+    <div style="font-size:18px;font-weight:800;color:var(--text1);margin-bottom:8px;">HertzGo · Rede de Eletropostos</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:24px;">Brasília · DF · Brasil</div>
+    <div style="font-size:20px;font-weight:800;font-family:'DM Mono',monospace;color:var(--green);margin-bottom:8px;">(61) 99803-7361</div>
+    <div style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;">Wagner Miranda · Sócio Fundador · WhatsApp</div>
+  </div>
+</div>`;
+  const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
+  return gerarHTMLBase("Apresentação · Rede HertzGo","Rede de Eletropostos · Brasília","Apresentado a","Potencial Investidor",periodo,dataGer,Math.round((dtMax.getTime()-dtMin.getTime())/86400000),totalSess,Math.round(totalKwh),brl(totalBruto),body);
+}
+
+function abrirHTML(html:string,nome:string){
+  const blob=new Blob([html],{type:"text/html"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`${nome}_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.html`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+function TabRelatorio({sessions,appState}:{sessions:Session[];appState:AppState}){
+  const hubs=useMemo(()=>Array.from(new Set(sessions.filter(s=>!s.cancelled&&s.energy>0).map(s=>s.hubKey))).sort(),[sessions]);
+  const[station,setStation]=useState(hubs[0]||"");
+  const[gerando,setGerando]=useState<string|null>(null);
+  const gerar=async(tipo:"eu"|"socio"|"op"|"pitch")=>{
+    setGerando(tipo);
+    await new Promise(r=>setTimeout(r,100));
     try{
-      // Carregar jsPDF via CDN script tag
-      if(!(window as unknown as Record<string,unknown>).jspdf){
-        await new Promise<void>((resolve,reject)=>{
-          const s=document.createElement("script");
-          s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-          s.onload=()=>resolve();s.onerror=()=>reject(new Error("Falha ao carregar jsPDF"));
-          document.head.appendChild(s);
-        });
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const {jsPDF:PDF}=(window as unknown as Record<string,{jsPDF:unknown}>).jspdf;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doc=new (PDF as any)({orientation:"portrait",unit:"mm",format:"a4"}) as any;
-      const W=210,H=297;
-      const BG="#080a0f",GREEN="#00e5a0",AMBER="#f59e0b",RED="#ef4444",TEAL="#016070";
-      const dataGer=new Date().toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
-      const periodo=`${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`;
-
-      const addPage=()=>{
-        doc.setFillColor(8,10,15);doc.rect(0,0,W,H,"F");
-        doc.setFillColor(18,22,32);doc.rect(0,0,W,12,"F");
-        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(0,229,160);
-        doc.text("HertzGo Vision",6,8);
-        doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(107,127,163);
-        doc.text(hubNome(station),W/2,8,{align:"center"});
-        doc.text(`Gerado em ${dataGer}`,W-6,8,{align:"right"});
-        doc.setDrawColor(30,40,55);doc.line(0,12,W,12);
-        doc.setFillColor(18,22,32);doc.rect(0,H-10,W,10,"F");
-        doc.setDrawColor(30,40,55);doc.line(0,H-10,W,H-10);
-        doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(45,58,82);
-        doc.text("CONFIDENCIAL · HertzGo · Uso Exclusivo Interno",W/2,H-4,{align:"center"});
-      };
-
-      const secLabel=(y:number,label:string)=>{
-        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(107,127,163);
-        doc.text(label.toUpperCase(),6,y);
-        doc.setDrawColor(30,40,55);doc.line(6,y+1.5,W-6,y+1.5);
-      };
-
-      const kpiBox=(x:number,y:number,w:number,h:number,label:string,value:string,sub:string,color:string)=>{
-        doc.setFillColor(18,22,32);doc.setDrawColor(30,40,55);
-        doc.roundedRect(x,y,w,h,2,2,"FD");
-        const rgb=color.startsWith("#")?[parseInt(color.slice(1,3),16),parseInt(color.slice(3,5),16),parseInt(color.slice(5,7),16)]:[0,229,160];
-        doc.setFillColor(rgb[0],rgb[1],rgb[2]);doc.rect(x,y,w,1,"F");
-        doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(107,127,163);
-        doc.text(label.toUpperCase(),x+3,y+6);
-        doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(rgb[0],rgb[1],rgb[2]);
-        doc.text(value,x+3,y+13);
-        doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(45,58,82);
-        doc.text(sub,x+3,y+18);
-      };
-
-      // ─── PÁGINA 1 — CAPA ─────────────────────────────────────────────────
-      doc.setFillColor(8,10,15);doc.rect(0,0,W,H,"F");
-      // Barra superior
-      doc.setFillColor(1,96,112);doc.rect(0,0,W,60,"F");
-      doc.setFillColor(0,229,160);doc.rect(0,58,W,2,"F");
-      // Logo texto
-      doc.setFont("helvetica","bold");doc.setFontSize(32);doc.setTextColor(255,255,255);
-      doc.text("Hertz",15,38);
-      doc.setTextColor(0,229,160);doc.text("Go",72,38);
-      doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(200,240,240);
-      doc.text("Vision · Painel Operacional",15,48);
-      // Título
-      doc.setFont("helvetica","bold");doc.setFontSize(22);doc.setTextColor(232,237,245);
-      doc.text("Relatório Operacional",15,80);
-      doc.setFont("helvetica","bold");doc.setFontSize(18);doc.setTextColor(0,229,160);
-      doc.text(hubNome(station),15,92);
-      // Badge tipo
-      const tipoColor=tipo==="propria"?[0,229,160]:tipo==="parceria"?[59,130,246]:[107,127,163];
-      doc.setFillColor(tipoColor[0],tipoColor[1],tipoColor[2]);doc.roundedRect(15,96,30,7,2,2,"F");
-      doc.setFont("helvetica","bold");doc.setFontSize(7);doc.setTextColor(8,10,15);
-      doc.text(tipo.toUpperCase(),30,101,{align:"center"});
-      // Período e data
-      doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(107,127,163);
-      doc.text(`Período: ${periodo}`,15,112);
-      doc.text(`Gerado em: ${dataGer}`,15,119);
-      doc.text(`${days} dias · ${totalSess} sessões · ${stUsers.length} usuários únicos`,15,126);
-      // Health Score destaque
-      doc.setFillColor(18,22,32);doc.setDrawColor(30,40,55);doc.roundedRect(15,138,W-30,50,4,4,"FD");
-      const hsRgb=hs.status==="saudavel"?[0,229,160]:hs.status==="atencao"?[245,158,11]:[239,68,68];
-      doc.setFillColor(hsRgb[0],hsRgb[1],hsRgb[2]);doc.roundedRect(15,138,W-30,2,2,2,"F");
-      doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(107,127,163);
-      doc.text("STATION HEALTH SCORE",W/2,148,{align:"center"});
-      doc.setFont("helvetica","bold");doc.setFontSize(40);doc.setTextColor(hsRgb[0],hsRgb[1],hsRgb[2]);
-      doc.text(`${hs.total}`,W/2-15,170,{align:"center"});
-      doc.setFont("helvetica","normal");doc.setFontSize(12);doc.setTextColor(107,127,163);
-      doc.text("/ 100",W/2+5,170);
-      doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(hsRgb[0],hsRgb[1],hsRgb[2]);
-      doc.text(hs.status==="saudavel"?"🟢 SAUDÁVEL":hs.status==="atencao"?"🟡 ATENÇÃO":"🔴 CRÍTICO",W/2,178,{align:"center"});
-      doc.setFont("helvetica","italic");doc.setFontSize(8);doc.setTextColor(107,127,163);
-      doc.text(hs.diagnostico,W/2,184,{align:"center"});
-      // Dimensões do score
-      const dims=[{l:"💰 Financeiro",v:hs.financeiro,m:40},{l:"⚡ Operacional",v:hs.operacional,m:35},{l:"🤝 Investidor",v:hs.investidor,m:25}];
-      dims.forEach((d,i)=>{
-        const x=20+i*(W-40)/3;const pw=(W-40)/3-4;
-        doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(107,127,163);
-        doc.text(d.l,x,198);
-        doc.setFillColor(24,29,40);doc.roundedRect(x,200,pw,4,1,1,"F");
-        const pct=d.v/d.m;
-        const barColor=pct>=0.7?[0,229,160]:pct>=0.4?[245,158,11]:[239,68,68];
-        doc.setFillColor(barColor[0],barColor[1],barColor[2]);doc.roundedRect(x,200,pw*pct,4,1,1,"F");
-        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(barColor[0],barColor[1],barColor[2]);
-        doc.text(`${d.v}/${d.m}`,x+pw+2,204);
-      });
-      // Confidencial capa
-      doc.setFillColor(18,22,32);doc.rect(0,H-15,W,15,"F");
-      doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(45,58,82);
-      doc.text("CONFIDENCIAL · HertzGo Vision · Uso Exclusivo Interno",W/2,H-5,{align:"center"});
-
-      // ─── PÁGINA 2 — KPIs + DRE ───────────────────────────────────────────
-      doc.addPage();addPage();
-      let y=20;
-      secLabel(y,"Visão Executiva — KPIs do Período");y+=6;
-      const kw=(W-18)/4;
-      kpiBox(6,y,kw,22,"Faturamento Bruto",brl(bruto),`R$${(bruto/days).toFixed(0)}/dia`,GREEN);
-      kpiBox(6+kw+2,y,kw,22,"Lucro Líquido",cfg?brl(ll):"Config DRE",cfg?`Margem ${margem.toFixed(1)}%`:"necessário",cfg&&ll>=0?GREEN:RED);
-      kpiBox(6+kw*2+4,y,kw,22,"Proj. Mensal",brl(faturMensal),"base 30 dias",AMBER);
-      kpiBox(6+kw*3+6,y,kw,22,"Proj. Anual",brl(faturAnual),"receita bruta","#3b82f6");
-      y+=26;
-      const kw2=(W-18)/4;
-      kpiBox(6,y,kw2,22,"Total Sessões",`${totalSess}`,`${(totalSess/days).toFixed(1)} sess/dia`,"#3b82f6");
-      kpiBox(6+kw2+2,y,kw2,22,"Energia Entregue",`${totalKwh.toFixed(0)} kWh`,`${(totalKwh/days).toFixed(0)} kWh/dia`,AMBER);
-      kpiBox(6+kw2*2+4,y,kw2,22,"Preço Médio/kWh",`R$${priceKwh.toFixed(2)}`,`Ticket: ${brl(ticket)}`,"#ef4444");
-      kpiBox(6+kw2*3+6,y,kw2,22,"Cancelamentos",`${(cancelRate*100).toFixed(1)}%`,cancelRate<=0.08?"✅ ok":cancelRate<=0.15?"⚠️ elevado":"🔴 crítico",cancelRate<=0.08?GREEN:cancelRate<=0.15?AMBER:RED);
-      y+=30;
-      // Tendência
-      secLabel(y,"Tendência");y+=7;
-      doc.setFont("helvetica","bold");doc.setFontSize(10);
-      const trendRgb=trend.color.startsWith("#")?[parseInt(trend.color.slice(1,3),16),parseInt(trend.color.slice(3,5),16),parseInt(trend.color.slice(5,7),16)]:[0,229,160];
-      doc.setTextColor(trendRgb[0],trendRgb[1],trendRgb[2]);
-      doc.text(trend.label,6,y);y+=8;
-      // DRE
-      if(cfg&&dreRows.length>0){
-        secLabel(y,"Demonstrativo de Resultado (DRE)");y+=7;
-        dreRows.forEach(r=>{
-          if(r.sep){doc.setDrawColor(30,40,55);doc.line(6,y-1,W-6,y-1);y+=1;}
-          doc.setFont("helvetica",r.bold?"bold":"normal");doc.setFontSize(8);
-          const rgb=r.val>=0?[232,237,245]:[239,68,68];
-          doc.setTextColor(rgb[0],rgb[1],rgb[2]);doc.text(r.label,6,y);
-          const vColor=r.bold?(r.val>=0?[0,229,160]:[239,68,68]):(r.val>=0?[232,237,245]:[239,68,68]);
-          doc.setTextColor(vColor[0],vColor[1],vColor[2]);doc.text(brl(r.val),W-6,y,{align:"right"});
-          y+=5.5;
-        });
-      }
-      y+=4;
-      // Segmentação de usuários
-      secLabel(y,"Segmentação de Usuários");y+=7;
-      const segs=[{l:"🔴 Motoristas",n:motoristas.length,color:RED},{l:"🟡 Heavy Users",n:heavys.length,color:AMBER},{l:"🟢 Shoppers",n:shoppers.length,color:GREEN},{l:"🔵 Parceiros",n:parceiros.length,color:"#3b82f6"}];
-      const segW=(W-16)/4;
-      segs.forEach((s,i)=>{
-        doc.setFillColor(18,22,32);doc.setDrawColor(30,40,55);doc.roundedRect(6+i*(segW+2),y,segW,16,2,2,"FD");
-        const sr=[parseInt(s.color.slice(1,3),16),parseInt(s.color.slice(3,5),16),parseInt(s.color.slice(5,7),16)];
-        doc.setFont("helvetica","normal");doc.setFontSize(6);doc.setTextColor(sr[0],sr[1],sr[2]);doc.text(s.l,8+i*(segW+2),y+5);
-        doc.setFont("helvetica","bold");doc.setFontSize(14);doc.setTextColor(sr[0],sr[1],sr[2]);doc.text(`${s.n}`,8+i*(segW+2),y+13);
-      });
-      y+=22;
-      // Top 5 usuários
-      if(top5.length>0){
-        secLabel(y,"Top 5 Usuários");y+=7;
-        top5.forEach((u,i)=>{
-          const rankColors=["#f59e0b","#94a3b8","#b47c3c","#6b7fa3","#6b7fa3"];
-          doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(parseInt(rankColors[i].slice(1,3),16),parseInt(rankColors[i].slice(3,5),16),parseInt(rankColors[i].slice(5,7),16));
-          doc.text(`${i+1}`,6,y);
-          doc.setFont("helvetica","normal");doc.setTextColor(232,237,245);doc.text(trunc(u.user,25),12,y);
-          doc.setFont("helvetica","bold");doc.setTextColor(0,229,160);doc.text(brl(u.rev),W-6,y,{align:"right"});
-          doc.setFont("helvetica","normal");doc.setTextColor(107,127,163);doc.text(`${u.sess} sess · ${u.kwh.toFixed(0)} kWh`,W-40,y);
-          doc.setDrawColor(24,29,40);doc.line(6,y+1,W-6,y+1);
-          y+=6;
-        });
-      }
-
-      // ─── PÁGINA 3 — INVESTIDOR / PERFORMANCE ─────────────────────────────
-      doc.addPage();addPage();
-      y=20;
-      if(cfg&&cfg.modelo==="investidor"){
-        secLabel(y,`Painel do Investidor — ${cfg.invNome||"Investidor"}`);y+=6;
-        const iw=(W-18)/4;
-        kpiBox(6,y,iw,22,"Retorno Período",brl(repInv),`${brl(retMensalInv)}/mês proj.`,AMBER);
-        kpiBox(6+iw+2,y,iw,22,"Rentabilidade Anual",`${rentAnual.toFixed(1)}%`,"sobre capital total",rentAnual>=12?GREEN:AMBER);
-        kpiBox(6+iw*2+4,y,iw,22,"Payback Estimado",mesesPay===Infinity?"—":mesesPay<12?`${Math.ceil(mesesPay)}m`:`${(mesesPay/12).toFixed(1)}a`,"para amortizar saldo",mesesPay<=36?GREEN:AMBER);
-        kpiBox(6+iw*3+6,y,iw,22,"Saldo Devedor",faltaAmort<=0?"Quitado":brl(faltaAmort),faltaAmort<=0?"✅ Payback ok":"restante",faltaAmort<=0?GREEN:RED);
-        y+=28;
-        // Barra de payback
-        secLabel(y,"Progresso do Payback");y+=7;
-        doc.setFillColor(24,29,40);doc.roundedRect(6,y,W-12,8,2,2,"F");
-        doc.setFillColor(0,229,160);doc.roundedRect(6,y,(W-12)*Math.min(1,pTotal/100),8,2,2,"F");
-        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(232,237,245);
-        doc.text(`${pTotal.toFixed(1)}% amortizado`,W/2,y+5.5,{align:"center"});
-        y+=14;
-        // Tabela investimento
-        secLabel(y,"Detalhamento do Investimento");y+=7;
-        const itens=[
-          {l:"Investimento Total",v:brl(cfg.invTotal)},{l:"Já Investido",v:brl(cfg.invPago)},
-          {l:"Dívida Prioritária",v:brl(cfg.invDividaPrio)},{l:"Já Amortizado",v:brl(cfg.invAmort)},
-          {l:"Split Investidor",v:`${cfg.invPct}% do LL`},{l:"Retorno Projetado Mensal",v:brl(retMensalInv)},
-        ];
-        itens.forEach(item=>{
-          doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(107,127,163);doc.text(item.l,6,y);
-          doc.setFont("helvetica","bold");doc.setTextColor(232,237,245);doc.text(item.v,W-6,y,{align:"right"});
-          doc.setDrawColor(24,29,40);doc.line(6,y+1,W-6,y+1);y+=6;
-        });
-      }else{
-        secLabel(y,"Performance — Estação Própria");y+=6;
-        const pw=(W-18)/3;
-        kpiBox(6,y,pw,22,"Receita Total",brl(bruto),`${brl(faturMensal)}/mês proj.`,GREEN);
-        kpiBox(6+pw+2,y,pw,22,"Ticket Médio",brl(ticket),`${(totalSess/days).toFixed(1)} sess/dia`,"#3b82f6");
-        kpiBox(6+pw*2+4,y,pw,22,"kWh/Dia",`${(totalKwh/days).toFixed(0)} kWh`,`Total: ${totalKwh.toFixed(0)} kWh`,AMBER);
-        y+=28;
-        if(cfg){
-          secLabel(y,"Retorno HertzGo");y+=7;
-          doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(107,127,163);doc.text("Lucro Líquido do Período:",6,y);
-          doc.setFont("helvetica","bold");doc.setTextColor(0,229,160);doc.text(brl(ll),W-6,y,{align:"right"});y+=6;
-          doc.setFont("helvetica","normal");doc.setTextColor(107,127,163);doc.text("Margem Líquida:",6,y);
-          doc.setFont("helvetica","bold");doc.setTextColor(ll>=0?0:239,ll>=0?229:68,ll>=0?160:68);doc.text(`${margem.toFixed(1)}%`,W-6,y,{align:"right"});y+=6;
-          doc.setFont("helvetica","normal");doc.setTextColor(107,127,163);doc.text("Projeção Anual:",6,y);
-          doc.setFont("helvetica","bold");doc.setTextColor(245,158,11);doc.text(brl(faturAnual),W-6,y,{align:"right"});y+=14;
-        }
-      }
-      // Heatmap por hora (texto simplificado)
-      secLabel(y,"Distribuição de Horários — Pico de Utilização");y+=7;
-      const peakHours=hourData.map((h,i)=>({h:i,s:h.sess})).sort((a,b)=>b.s-a.s).slice(0,5);
-      doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(107,127,163);
-      doc.text("Top 5 horários de pico:",6,y);y+=5;
-      peakHours.forEach((ph,i)=>{
-        const pct=maxHour>0?(ph.s/maxHour):0;
-        const barW=(W-60)*pct;
-        doc.setFillColor(24,29,40);doc.roundedRect(6,y,W-60,5,1,1,"F");
-        const bc=pct>0.7?[0,229,160]:pct>0.4?[245,158,11]:[59,130,246];
-        doc.setFillColor(bc[0],bc[1],bc[2]);doc.roundedRect(6,y,Math.max(barW,2),5,1,1,"F");
-        doc.setFont("helvetica","bold");doc.setFontSize(7);doc.setTextColor(107,127,163);
-        doc.text(`${ph.h}h`,W-50,y+4);
-        doc.setTextColor(232,237,245);doc.text(`${ph.s} sessões`,W-35,y+4);
-        y+=7;
-      });
-      y+=6;
-      // Notas finais
-      secLabel(y,"Notas e Observações");y+=7;
-      doc.setFont("helvetica","italic");doc.setFontSize(7);doc.setTextColor(45,58,82);
-      doc.text(`• Dados extraídos do sistema HertzGo Vision em ${dataGer}`,6,y);y+=5;
-      doc.text(`• Período analisado: ${periodo} (${periodDays} dias)`,6,y);y+=5;
-      doc.text("• Projeções mensais calculadas com base na média diária do período",6,y);y+=5;
-      doc.text("• Este relatório é confidencial e de uso exclusivo da HertzGo",6,y);y+=5;
-      doc.text("• Contato: (61) 99803-7361 · HertzGo Rede de Eletropostos",6,y);
-
-      // Salvar
-      const fname=`HertzGo_${hubNome(station).replace(/\s+/g,"_")}_${dtMin.toLocaleDateString("pt-BR").replace(/\//g,"-")}_${dtMax.toLocaleDateString("pt-BR").replace(/\//g,"-")}.pdf`;
-      doc.save(fname);
-    }catch(e){
-      console.error("Erro ao gerar PDF:",e);
-      alert("Erro ao gerar PDF. Verifique o console.");
-    }
-    setGerando(false);
+      if(tipo==="eu"){const html=gerarResumExecutivo(sessions,appState,station);abrirHTML(html,`HertzGo_ResumExecutivo_${hubNome(station).replace(/\s/g,"_")}`);}
+      else if(tipo==="socio"){const html=gerarRelatorioSocio(sessions,appState,station);abrirHTML(html,`HertzGo_Socio_${hubNome(station).replace(/\s/g,"_")}`);}
+      else if(tipo==="op"){const html=gerarRelatorioOperacional(sessions,appState,station);abrirHTML(html,`HertzGo_Operacional_${hubNome(station).replace(/\s/g,"_")}`);}
+      else{const html=gerarApresentacao(sessions,appState);abrirHTML(html,"HertzGo_Apresentacao");}
+    }catch(e){console.error(e);alert("Erro ao gerar relatório.");}
+    setGerando(null);
   };
-
   return(
     <div style={{padding:"24px 28px"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28}}>
-        <div>
-          <div style={{fontFamily:T.sans,fontSize:20,fontWeight:700,color:T.text,marginBottom:4}}>📄 Relatórios</div>
-          <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Gere relatórios PDF profissionais por estação para investidores e gestão</div>
-        </div>
+      <div style={{marginBottom:28}}>
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,letterSpacing:"0.18em",textTransform:"uppercase",marginBottom:4}}>Relatórios & Apresentações</div>
+        <div style={{fontFamily:T.sans,fontSize:20,fontWeight:700,color:T.text,marginBottom:4}}>Central de Relatórios</div>
+        <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Baseados nos dados do CSV carregado — cada relatório tem foco e audiência distintos</div>
       </div>
-
       {/* Seletor de estação */}
-      <SectionLabel>Selecionar Estação</SectionLabel>
-      <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(hubs.length,6)},1fr)`,gap:10,marginBottom:28}}>
-        {hubs.map(h=>{
-          const hs2=calcHealthScore(sessions,appState.dreConfigs[h]||null,h);
-          const color=hs2.status==="saudavel"?T.green:hs2.status==="atencao"?T.amber:T.red;
-          const tipo2=ESTACAO_TIPO[h]||"contratual";
-          return(
-            <div key={h} onClick={()=>setStation(h)} style={{background:station===h?`${color}10`:T.bg2,border:`1px solid ${station===h?color+"60":T.border}`,borderRadius:14,padding:"14px",cursor:"pointer",transition:"all 0.2s",position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:station===h?color:"transparent"}}/>
-              <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{hubNome(h)}</div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{tipo2}</span>
-                <span style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color}}>{hs2.total}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Preview do relatório */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:28}}>
-        {/* Coluna esquerda — resumo */}
-        <div>
-          <Panel style={{marginBottom:16}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-              <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text}}>📋 {hubNome(station)}</div>
-              <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{periodo}</span>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-              <KpiCard label="Receita Bruta" value={brl(bruto)} sub={`${brl(faturMensal)}/mês`} accent={T.green} small/>
-              <KpiCard label="Health Score" value={`${hs.total}/100`} sub={`${hsEmoji} ${hs.status}`} accent={hsColor} small/>
-              <KpiCard label="Sessões" value={`${totalSess}`} sub={`${(totalSess/days).toFixed(1)}/dia`} accent={T.blue} small/>
-              <KpiCard label="Margem" value={cfg?`${margem.toFixed(1)}%`:"—"} sub={cfg?"do faturamento":"Config DRE"} accent={cfg&&ll>=0?T.green:T.amber} small/>
-            </div>
-            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"8px 10px",background:T.bg3,borderRadius:8}}>
-              {hs.diagnostico}
-            </div>
-          </Panel>
-
-          <Panel style={{marginBottom:16}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,marginBottom:12}}>📄 Conteúdo do Relatório</div>
-            {[
-              {icon:"🏠",label:"Capa",sub:"Logo · Estação · Health Score visual · Período"},
-              {icon:"📊",label:"Pág. 1 — KPIs Executivos",sub:"8 KPIs · DRE · Segmentação · Top 5 usuários"},
-              {icon:"💼",label:cfg?.modelo==="investidor"?"Pág. 2 — Painel do Investidor":"Pág. 2 — Performance Própria",sub:cfg?.modelo==="investidor"?"Payback · Rentabilidade · Amortização":"Receita HertzGo · Margem · Projeção"},
-              {icon:"⏰",label:"Pág. 2 — Inteligência Operacional",sub:"Heatmap de horários · Notas e observações"},
-            ].map((item,i)=>(
-              <div key={i} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-                <span style={{fontSize:16,flexShrink:0}}>{item.icon}</span>
-                <div>
-                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text}}>{item.label}</div>
-                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{item.sub}</div>
+      <div style={{marginBottom:28}}>
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:10}}>Estação (para relatórios operacionais)</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(hubs.length,6)},1fr)`,gap:8}}>
+          {hubs.map(h=>{
+            const cfg=appState.dreConfigs[h]||null;
+            const hs=calcHealthScore(sessions,cfg,h);
+            const color=hs.status==="saudavel"?T.green:hs.status==="atencao"?T.amber:T.red;
+            return(
+              <div key={h} onClick={()=>setStation(h)} style={{background:station===h?`${color}10`:T.bg2,border:`1px solid ${station===h?color+"60":T.border}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:station===h?color:"transparent"}}/>
+                <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.text,marginBottom:4}}>{hubNome(h)}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{(ESTACAO_TIPO as Record<string,string>)[h]||"contratual"}</span>
+                  <span style={{fontFamily:T.mono,fontSize:14,fontWeight:800,color}}>{hs.total}</span>
                 </div>
               </div>
-            ))}
-          </Panel>
+            );
+          })}
         </div>
-
-        {/* Coluna direita — ação */}
-        <div>
-          <Panel style={{marginBottom:16,textAlign:"center",padding:"32px 24px"}}>
-            <div style={{fontSize:48,marginBottom:16}}>📄</div>
-            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>
-              Relatório — {hubNome(station)}
+      </div>
+      {/* Relatórios Operacionais */}
+      <div style={{marginBottom:8}}>
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,letterSpacing:"0.18em",textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
+          <span>📊</span> Relatórios Operacionais
+        </div>
+        <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:16}}>Baseados nos dados do CSV carregado — cada relatório tem foco e audiência distintos</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:28}}>
+          {[
+            {tipo:"eu" as const,icon:"💡",title:"Resumo Executivo",sub:"DRE completo + operacional + semáforo · Uso interno da gestão",color:T.green},
+            {tipo:"socio" as const,icon:"🤝",title:"Relatório Sócio / Parceiro",sub:"Distribuição de resultados · Payback · KPIs do investimento",color:T.amber},
+            {tipo:"op" as const,icon:"🔧",title:"Relatório Operacional",sub:"Sessões · kWh · Ticket · Eficiência · Sem dados financeiros",color:"#3b82f6"},
+          ].map(r=>(
+            <div key={r.tipo} onClick={()=>!gerando&&gerar(r.tipo)} style={{background:T.bg2,border:`1px solid ${gerando===r.tipo?r.color+"60":T.border}`,borderRadius:12,padding:"18px 20px",cursor:gerando?"not-allowed":"pointer",transition:"border-color 0.2s",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:gerando===r.tipo?r.color:"transparent"}}/>
+              <div style={{fontSize:20,marginBottom:8}}>{gerando===r.tipo?"⏳":r.icon}</div>
+              <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:gerando===r.tipo?r.color:T.text,marginBottom:4}}>{gerando===r.tipo?"Gerando...":r.title}</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{r.sub}</div>
             </div>
-            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:24,lineHeight:1.8}}>
-              3 páginas · PDF A4 · PT-BR<br/>
-              Gerado localmente no browser<br/>
-              Sem envio de dados para servidores
+          ))}
+          <div style={{background:"rgba(0,188,212,0.04)",border:`1px solid rgba(0,188,212,0.15)`,borderRadius:12,padding:"18px 20px",display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>Estação selecionada: <strong style={{color:T.teal}}>{hubNome(station)}</strong></span>
+          </div>
+        </div>
+      </div>
+      {/* Apresentação */}
+      <div>
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,letterSpacing:"0.18em",textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:16,display:"flex",alignItems:"center",gap:8}}>
+          <span>🚀</span> Apresentação para Investidores
+        </div>
+        <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:16}}>Apresentação impactante com dados reais da rede · gráficos · mercado · gestão profissional</div>
+        <div onClick={()=>!gerando&&gerar("pitch")} style={{background:gerando==="pitch"?"rgba(0,230,118,0.06)":T.bg2,border:`1px solid ${gerando==="pitch"?T.green+"60":"rgba(0,230,118,0.2)"}`,borderRadius:12,padding:"24px",cursor:gerando?"not-allowed":"pointer",transition:"all 0.2s",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:gerando==="pitch"?T.green:"rgba(0,230,118,0.3)"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <span style={{fontSize:32}}>{gerando==="pitch"?"⏳":"🚀"}</span>
+            <div>
+              <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:gerando==="pitch"?T.green:T.text,marginBottom:4}}>{gerando==="pitch"?"Gerando Apresentação...":"Pitch da Rede HertzGo"}</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>Universal · Mercado EV · Rede em números · Performance · Modelo de negócio · CTA — (61) 99803-7361</div>
             </div>
-            <button onClick={gerarPDF} disabled={gerando||sessoes.length===0} style={{width:"100%",padding:"14px 24px",borderRadius:12,fontFamily:T.sans,fontSize:14,fontWeight:700,cursor:sessoes.length===0?"not-allowed":"pointer",background:sessoes.length===0?"rgba(255,255,255,0.04)":T.green,color:sessoes.length===0?T.text3:T.bg,border:"none",transition:"all 0.2s",opacity:gerando?0.7:1,marginBottom:12}}>
-              {gerando?"⏳ Gerando PDF...":"⬇️ Gerar e Baixar PDF"}
-            </button>
-            {sessoes.length===0&&(
-              <div style={{fontFamily:T.mono,fontSize:11,color:T.amber}}>⚠️ Nenhuma sessão para esta estação no CSV carregado</div>
-            )}
-            {sessoes.length>0&&(
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>
-                {sessoes.length} sessões · {dtMin.toLocaleDateString("pt-BR")} → {dtMax.toLocaleDateString("pt-BR")}
-              </div>
-            )}
-          </Panel>
-
-          {!cfg&&(
-            <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:12,padding:"14px 16px",fontFamily:T.mono,fontSize:11,color:T.amber}}>
-              ⚙️ Configure o DRE desta estação em <strong>Config → DRE Config</strong> para incluir análise financeira no relatório.
-            </div>
-          )}
-
-          {cfg&&(
-            <Panel>
-              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text,marginBottom:12}}>🔢 Resumo DRE</div>
-              {dreRows.map((r,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${T.border}`,borderTop:r.sep?`1px solid ${T.border}`:"none"}}>
-                  <span style={{fontFamily:T.mono,fontSize:11,fontWeight:r.bold?700:400,color:T.text2}}>{r.label}</span>
-                  <span style={{fontFamily:T.mono,fontSize:11,fontWeight:r.bold?700:400,color:r.val>=0?T.green:T.red}}>{brl(r.val)}</span>
-                </div>
-              ))}
-            </Panel>
-          )}
+            <div style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.green,border:`1px solid ${T.green}40`,padding:"6px 16px",borderRadius:8}}>Gerar HTML</div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
+
 
 // ─── ROOT ────────────────────────────────────────────────────────────────────
 export default function HertzGo(){
