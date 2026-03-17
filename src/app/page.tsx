@@ -767,8 +767,6 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
   const[err,setErr]=useState("");
   const[loading,setLoading]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
-  const baseMestreRef=useRef<HTMLInputElement>(null);
-  const[limiteDisp,setLimiteDisp]=useState(appState.limiteDisparoDiario||20);
   const process=useCallback(async(file:File)=>{
     setLoading(true);setErr("");
     try{if(file.name.toLowerCase().match(/\.xlsx?$/)){const{sessions}=await parseMove(file);onFile(sessions);}else{const text=await file.text();onFile(parseSpott(text));}}
