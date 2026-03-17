@@ -577,7 +577,7 @@ function gerarFilaDia(
   const slotsRestantes = Math.max(0, limite - disparadosHoje);
   const filaDia = fila.filter(u => !u.jaContactado).slice(0, slotsRestantes);
 
-  return { fila: filaDia, semTelefone, novosDetectados: [...new Set(novosDetectados)] };
+  return { fila: filaDia, semTelefone, novosDetectados: Array.from(new Set(novosDetectados)) };
 }
 
 // ─── CLASSIFICAR USUÁRIOS ────────────────────────────────────────────────────
