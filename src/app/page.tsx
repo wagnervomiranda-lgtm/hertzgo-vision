@@ -82,6 +82,18 @@ interface Mensagens {
 }
 interface CupomRegistro { usuario: string; motivo: string; validade: string; estacao: string; }
 interface EstacaoCustom { key: string; nome: string; tipo: "propria" | "parceria" | "contratual"; ativa: boolean; }
+
+// ─── BASE MESTRE ─────────────────────────────────────────────────────────────
+interface BaseMestreUsuario {
+  nome: string; email: string; telefone: string; temTel: boolean; importadoEm: string;
+}
+// ─── OVERRIDES DE CLASSIFICAÇÃO ──────────────────────────────────────────────
+interface UserOverride {
+  isMotorista?: boolean; isEmbaixador?: boolean; ignorarCRM?: boolean;
+  segmento?: "motorista"|"heavy"|"shopper"|"embaixador"|"parceiro";
+  atualizadoEm: string; fonte: "whatsapp"|"manual"|"csv";
+}
+
 interface AppState {
   metas: Record<string, number>;
   dreConfigs: Record<string, DREConfig>;
@@ -91,6 +103,9 @@ interface AppState {
   zapi: ZAPIConfig;
   cupons: CupomRegistro[];
   estacoesCustom: EstacaoCustom[];
+  baseMestre: Record<string, BaseMestreUsuario>;
+  userOverrides: Record<string, UserOverride>;
+  limiteDisparoDiario: number;
 }
 type Tab = "dash" | "dre" | "usuarios" | "acoes" | "config" | "relatorio";
 
@@ -173,6 +188,7 @@ function defaultState(): AppState {
     metas: {}, dreConfigs: {}, contatos: {}, mensagens: { ...MSG_DEFAULT },
     disparos: [], zapi: { instanceId: "", token: "", clientToken: "" },
     cupons: [], estacoesCustom: [],
+    baseMestre: {}, userOverrides: {}, limiteDisparoDiario: 20,
   };
 }
 function loadState(): AppState {
@@ -373,6 +389,197 @@ function calcHealthScore(sessions:Session[],cfg:DREConfig|null,hubK:string):Heal
   return{total,status,financeiro:fin,operacional:op,investidor:inv,diagnostico:diagnosticos[status],financeiroDet:finDet,operacionalDet:opDet,investidorDet:invDet};
 }
 
+// ─── PARSER BASE MESTRE ──────────────────────────────────────────────────────
+function parseBaseMestre(text: string): Record<string, BaseMestreUsuario> {
+  text = text.replace(/^\uFEFF/, "");
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return {};
+  const result: Record<string, BaseMestreUsuario> = {};
+  for (let i = 1; i < lines.length; i++) {
+    let line = lines[i].trim();
+    if (line.startsWith('"')) line = line.slice(1);
+    if (line.endsWith('"')) line = line.slice(0, -1);
+    line = line.replace(/""/g, "\x00");
+    const cols = line.split(",\x00").map(c => c.replace(/\x00/g, "").replace(/^"|"$/g, "").trim());
+    if (cols.length < 4) continue;
+    const nome = cols[0].trim();
+    const email = cols[1]?.trim() || "";
+    const tel = cols[3]?.replace(/\D/g, "") || "";
+    if (!nome) continue;
+    result[nome.toLowerCase()] = {
+      nome, email, telefone: tel,
+      temTel: tel.length >= 10,
+      importadoEm: new Date().toISOString(),
+    };
+  }
+  return result;
+}
+
+// ─── PRIORIDADE ESTAÇÃO ───────────────────────────────────────────────────────
+// Dinâmico: usa estacoesCustom para novas estações próprias automaticamente
+function getPrioridadeEstacao(hubK: string, estacoesCustom?: EstacaoCustom[]): number {
+  const tipo = hubTipo(hubK, estacoesCustom);
+  if (tipo === "propria") return 3;    // máxima — suas estações, seu dados, sua receita
+  if (tipo === "parceria") return 2;   // média — parceiro estratégico
+  return 1;                            // contratual — menor prioridade CRM
+}
+
+// ─── SEGMENTO CRM ─────────────────────────────────────────────────────────────
+// Retorna o segmento final considerando overrides + comportamento CSV
+function getSegmento(
+  user: string,
+  sessoes: Session[],
+  overrides: Record<string, UserOverride>,
+  periodWeeks: number
+): { segmento: string; prioridade: number; cor: string; fonte: string } {
+  const key = user.toLowerCase();
+  const ov = overrides[key];
+
+  // Override explícito tem prioridade absoluta
+  if (ov?.isEmbaixador) return { segmento: "Embaixador", prioridade: 0, cor: "#8b5cf6", fonte: ov.fonte };
+  if (ov?.ignorarCRM)   return { segmento: "Ignorar",    prioridade: -1, cor: "#374151", fonte: ov.fonte };
+  if (ov?.isMotorista === true)  return { segmento: "Motorista",  prioridade: 4, cor: "#ef4444", fonte: ov.fonte };
+  if (ov?.isMotorista === false) return { segmento: "Não Motorista", prioridade: 2, cor: "#3b82f6", fonte: ov.fonte };
+
+  // Inferência pelo CSV
+  const uSess = sessoes.filter(s => s.user === user && !s.cancelled && s.energy > 0);
+  const temGratis = uSess.some(s => s.value === 0);
+  const mediaKwh = uSess.reduce((a,s)=>a+s.energy,0) > 0
+    ? uSess.reduce((a,s)=>a+s.value,0) / uSess.reduce((a,s)=>a+s.energy,0) : 999;
+
+  if (temGratis || mediaKwh < 1.00) return { segmento: "Parceiro", prioridade: 1, cor: "#3b82f6", fonte: "csv" };
+
+  const recPorSemana = uSess.length / Math.max(1, periodWeeks);
+  const totalKwh = uSess.reduce((a,s)=>a+s.energy,0);
+
+  if (recPorSemana > 2.5 || totalKwh > 150) return { segmento: "Motorista", prioridade: 4, cor: "#ef4444", fonte: "csv" };
+  if (totalKwh > 80 || uSess.length >= 4)    return { segmento: "Heavy",     prioridade: 3, cor: "#eab308", fonte: "csv" };
+  if (uSess.length >= 1)                      return { segmento: "Shopper",   prioridade: 2, cor: "#22c55e", fonte: "csv" };
+  return { segmento: "Inativo", prioridade: 0, cor: "#374151", fonte: "csv" };
+}
+
+// ─── FILA DO DIA ─────────────────────────────────────────────────────────────
+interface FilaItem {
+  nome: string; telefone: string; email: string; segmento: string;
+  prioridadeSegmento: number; prioridadeEstacao: number; prioridade: number;
+  hubKey: string; hubNomeStr: string; hubTipoStr: string;
+  kwh: number; valor: number; sessoes: number;
+  diasSemRecarga: number; ultimaRecarga: Date | null;
+  jaContactado: boolean; diasDesdeContato: number;
+  msgId: string; fonteSegmento: string;
+  novoNaBase: boolean; // nome apareceu nas transações mas não está na base mestre
+}
+
+function gerarFilaDia(
+  sessions: Session[],
+  appState: AppState,
+  limite: number
+): { fila: FilaItem[]; semTelefone: FilaItem[]; novosDetectados: string[] } {
+  const ok = sessions.filter(s => !s.cancelled && s.energy > 0);
+  const datas = ok.map(s => s.date.getTime());
+  const periodDays = Math.max(1, Math.round((Math.max(...datas, 0) - Math.min(...datas, 0)) / 86400000) + 1);
+  const periodWeeks = periodDays / 7;
+
+  // Montar mapa de usuários únicos das transações
+  const userMap: Record<string, { sessoes: Session[] }> = {};
+  ok.forEach(s => {
+    if (!userMap[s.user]) userMap[s.user] = { sessoes: [] };
+    userMap[s.user].sessoes.push(s);
+  });
+
+  // Resolver telefone: base mestre > contatos > Move
+  const getTelefone = (nome: string): string => {
+    const key = nome.toLowerCase();
+    if (appState.baseMestre[key]?.temTel) return appState.baseMestre[key].telefone;
+    const contatosTodos = Object.values(appState.contatos).flatMap(c => c.dados);
+    const match = contatosTodos.find(d => d.nome.toLowerCase().includes(key) || key.includes(d.nome.toLowerCase().trim()));
+    return match?.telefone || "";
+  };
+
+  const getEmail = (nome: string): string => {
+    const key = nome.toLowerCase();
+    return appState.baseMestre[key]?.email || "";
+  };
+
+  const hoje = Date.now();
+  const novosDetectados: string[] = [];
+  const fila: FilaItem[] = [];
+  const semTelefone: FilaItem[] = [];
+
+  Object.entries(userMap).forEach(([nome, data]) => {
+    const ov = appState.userOverrides[nome.toLowerCase()];
+    if (ov?.ignorarCRM) return;
+
+    const seg = getSegmento(nome, ok, appState.userOverrides, periodWeeks);
+    if (seg.prioridade <= 0) return; // embaixadores e ignorados ficam fora da fila
+
+    // Estação mais frequente
+    const hubCount: Record<string, number> = {};
+    data.sessoes.forEach(s => { hubCount[s.hubKey] = (hubCount[s.hubKey] || 0) + 1; });
+    const hubK = Object.entries(hubCount).sort((a,b)=>b[1]-a[1])[0]?.[0] || "";
+    const prioEstacao = getPrioridadeEstacao(hubK, appState.estacoesCustom);
+
+    // Prioridade composta: segmento (0-4) × 10 + estação (1-3)
+    const prioridade = seg.prioridade * 10 + prioEstacao;
+
+    const ultimaRecargaTs = Math.max(...data.sessoes.map(s => s.date.getTime()));
+    const ultimaRecarga = new Date(ultimaRecargaTs);
+    const diasSemRecarga = Math.round((hoje - ultimaRecargaTs) / 86400000);
+
+    // Verificar se já foi contatado recentemente
+    const contatos30d = appState.disparos.filter(d =>
+      d.nome === nome && d.status === "ok" &&
+      (hoje - new Date(d.ts).getTime()) < 30 * 86400000
+    );
+    const jaContactado = contatos30d.length > 0;
+    const diasDesdeContato = jaContactado
+      ? Math.round((hoje - new Date(contatos30d[0].ts).getTime()) / 86400000) : 999;
+
+    // Determinar msgId correto
+    let msgId = "msg1";
+    if (ov?.isMotorista === true) msgId = "msg2a";
+    else if (ov?.isMotorista === false) msgId = "msg2b";
+    else if (seg.segmento === "Motorista") msgId = "msg2a";
+    else if (seg.segmento === "Heavy" || seg.segmento === "Shopper") msgId = "msg2b";
+
+    // Detectar novo na base mestre
+    const novoNaBase = !appState.baseMestre[nome.toLowerCase()];
+    if (novoNaBase) novosDetectados.push(nome);
+
+    const tel = getTelefone(nome);
+    const item: FilaItem = {
+      nome, telefone: tel, email: getEmail(nome),
+      segmento: seg.segmento, prioridadeSegmento: seg.prioridade,
+      prioridadeEstacao: prioEstacao, prioridade,
+      hubKey: hubK, hubNomeStr: hubNome(hubK, appState.estacoesCustom),
+      hubTipoStr: hubTipo(hubK, appState.estacoesCustom),
+      kwh: data.sessoes.reduce((a,s)=>a+s.energy,0),
+      valor: data.sessoes.reduce((a,s)=>a+s.value,0),
+      sessoes: data.sessoes.length,
+      diasSemRecarga, ultimaRecarga,
+      jaContactado, diasDesdeContato,
+      msgId, fonteSegmento: seg.fonte,
+      novoNaBase,
+    };
+
+    if (tel) fila.push(item);
+    else semTelefone.push(item);
+  });
+
+  // Ordenar: maior prioridade primeiro, depois mais dias sem recarga
+  fila.sort((a, b) => b.prioridade - a.prioridade || b.diasSemRecarga - a.diasSemRecarga);
+  semTelefone.sort((a, b) => b.prioridade - a.prioridade);
+
+  // Aplicar limite diário
+  const disparadosHoje = appState.disparos.filter(d =>
+    d.status === "ok" && (hoje - new Date(d.ts).getTime()) < 86400000
+  ).length;
+  const slotsRestantes = Math.max(0, limite - disparadosHoje);
+  const filaDia = fila.filter(u => !u.jaContactado).slice(0, slotsRestantes);
+
+  return { fila: filaDia, semTelefone, novosDetectados: [...new Set(novosDetectados)] };
+}
+
 // ─── CLASSIFICAR USUÁRIOS ────────────────────────────────────────────────────
 function classificarUsuarios(sessions:Session[]):UserData[]{
   const datas=sessions.map(s=>s.date.getTime());
@@ -560,6 +767,8 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
   const[err,setErr]=useState("");
   const[loading,setLoading]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
+  const baseMestreRef=useRef<HTMLInputElement>(null);
+  const[limiteDisp,setLimiteDisp]=useState(appState.limiteDisparoDiario||20);
   const process=useCallback(async(file:File)=>{
     setLoading(true);setErr("");
     try{if(file.name.toLowerCase().match(/\.xlsx?$/)){const{sessions}=await parseMove(file);onFile(sessions);}else{const text=await file.text();onFile(parseSpott(text));}}
@@ -1277,6 +1486,121 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
         <KpiCard label="Enviados 30d" value={`${localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<30*86400000).length}`} sub="confirmados" accent={T.amber} small/>
         <KpiCard label="Total Enviado" value={`${localDisparos.filter(d=>d.status==="ok").length}`} sub="Z-API" accent={T.green} small/>
       </div>
+
+      {/* FILA DO DIA — ALGORITMO INTELIGENTE */}
+      {(()=>{
+        const limite=appState.limiteDisparoDiario||20;
+        const{fila,semTelefone,novosDetectados}=gerarFilaDia(sessions,appState,limite);
+        const disparadosHoje=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
+        const[filaExpanded,setFilaExpanded]=useState(true);
+        const[semTelExpanded,setSemTelExpanded]=useState(false);
+        const segCores:Record<string,string>={Motorista:T.red,Heavy:T.amber,Shopper:T.green,Parceiro:T.blue,Embaixador:"#8b5cf6"};
+        return(
+          <div style={{marginBottom:20}}>
+            {/* Header Fila do Dia */}
+            <div style={{background:"rgba(0,229,160,0.06)",border:"1px solid rgba(0,229,160,0.25)",borderRadius:14,overflow:"hidden",marginBottom:10}}>
+              <div onClick={()=>setFilaExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:18}}>🎯</span>
+                  <div>
+                    <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Fila do Dia — Algoritmo Inteligente</div>
+                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{fila.length} prontos · {disparadosHoje}/{limite} disparados hoje · {semTelefone.length} sem tel</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  {novosDetectados.length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {novosDetectados.length} novos detectados</span>}
+                  <span style={{fontFamily:T.mono,fontSize:11,padding:"2px 9px",borderRadius:20,background:"rgba(0,229,160,0.15)",color:T.green,border:"1px solid rgba(0,229,160,0.3)"}}>{fila.length}</span>
+                  <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{filaExpanded?"▲":"▼"}</span>
+                </div>
+              </div>
+              {filaExpanded&&(
+                <div style={{borderTop:`1px solid rgba(0,229,160,0.2)`}}>
+                  {novosDetectados.length>0&&(
+                    <div style={{padding:"10px 16px",background:"rgba(245,158,11,0.06)",borderBottom:"1px solid rgba(245,158,11,0.2)",fontFamily:T.mono,fontSize:11,color:T.amber}}>
+                      ⚠️ Novos usuários detectados nas transações sem cadastro na base mestre: <strong>{novosDetectados.slice(0,5).join(", ")}{novosDetectados.length>5?` +${novosDetectados.length-5}`:""}</strong>
+                      <br/><span style={{fontSize:10,color:T.text3}}>→ Exporte o CSV de usuários da Spott e importe em Config → Contatos → Base Mestre</span>
+                    </div>
+                  )}
+                  {fila.length===0?(
+                    <div style={{padding:"20px",textAlign:"center",fontFamily:T.mono,fontSize:11,color:T.text3}}>
+                      {disparadosHoje>=limite?"✅ Limite diário atingido":"✅ Fila vazia — todos contactados recentemente"}
+                    </div>
+                  ):(
+                    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?400:undefined}}>
+                        <thead><tr style={{background:T.bg3}}>
+                          <th style={TH}>Usuário</th>
+                          <th style={TH}>Segmento</th>
+                          <th style={TH}>Estação</th>
+                          <th style={{...THR}}>Dias</th>
+                          <th style={TH}>Fonte</th>
+                          <th style={THR}></th>
+                        </tr></thead>
+                        <tbody>
+                          {fila.map(u=>{
+                            const cor=segCores[u.segmento]||T.text2;
+                            const tipoEmoji=u.hubTipoStr==="propria"?"🏠":u.hubTipoStr==="parceria"?"🤝":"📋";
+                            const sendKey=`${u.nome}_${u.msgId}_fila`;
+                            const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
+                            return(
+                              <tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+                                <td style={TD}>
+                                  <div style={{fontWeight:500,fontSize:12}}>{trunc(u.nome,isMobile?14:22)}</div>
+                                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.sessoes}x · R${u.valor.toFixed(0)}</div>
+                                </td>
+                                <td style={TD}>
+                                  <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}18`,color:cor,border:`1px solid ${cor}30`}}>{u.segmento}</span>
+                                  {u.fonteSegmento!=="csv"&&<span style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginLeft:4}}>✓dec</span>}
+                                </td>
+                                <td style={TD}>
+                                  <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{tipoEmoji} {trunc(u.hubNomeStr,isMobile?10:16)}</span>
+                                </td>
+                                <td style={{...TDR,color:u.diasSemRecarga>21?T.red:u.diasSemRecarga>10?T.amber:T.text2,fontSize:11}}>{u.diasSemRecarga}d</td>
+                                <td style={{...TD,fontSize:10,color:T.text3}}>{u.fonteSegmento}</td>
+                                <td style={TDR}>
+                                  <button onClick={()=>abrirPreview(u.nome,u.hubKey,u.msgId,template,"")} disabled={sending[sendKey]} style={{padding:"5px 10px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:sending[sendKey]?"rgba(255,255,255,0.05)":"rgba(0,229,160,0.15)",border:`1px solid ${sending[sendKey]?T.border:"rgba(0,229,160,0.3)"}`,color:sending[sendKey]?T.text3:T.green}}>{sending[sendKey]?"⏳":"📤"}</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Sem telefone */}
+            {semTelefone.length>0&&(
+              <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:12,overflow:"hidden",marginBottom:10}}>
+                <div onClick={()=>setSemTelExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",cursor:"pointer"}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.red}}>📵 Sem telefone — {semTelefone.length} usuários</div>
+                  <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{semTelExpanded?"▲":"▼"}</span>
+                </div>
+                {semTelExpanded&&(
+                  <div style={{borderTop:"1px solid rgba(239,68,68,0.15)",overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
+                      <thead><tr><th style={TH}>Usuário</th><th style={TH}>Segmento</th><th style={TH}>Estação</th><th style={{...THR}}>Valor</th><th style={TH}>Email</th></tr></thead>
+                      <tbody>
+                        {semTelefone.slice(0,20).map(u=>{
+                          const cor=segCores[u.segmento]||T.text2;
+                          return(<tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+                            <td style={TD}><div style={{fontSize:12}}>{trunc(u.nome,isMobile?14:20)}</div></td>
+                            <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{u.segmento}</span></td>
+                            <td style={{...TD,fontSize:11,color:T.text2}}>{trunc(u.hubNomeStr,12)}</td>
+                            <td style={{...TDR,color:T.text2,fontSize:11}}>R${u.valor.toFixed(0)}</td>
+                            <td style={{...TD,fontSize:10,color:u.email?T.blue:T.text3}}>{u.email?`✉️ ${trunc(u.email,isMobile?12:20)}`:"—"}</td>
+                          </tr>);
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {zapiStatus==="err"&&(<div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:T.amber}}>⚠️ Configure em Config → Z-API</div>)}
       {Object.keys(appState.contatos).length===0&&(<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:"#60a5fa"}}>ℹ️ Importe o CSV de usuários em Config → Contatos.</div>)}
       {/* Seções CRM */}
@@ -1359,6 +1683,8 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
   const[dreStation,setDreStation]=useState("costa");
   const[dreSaved,setDreSaved]=useState(false);
   const inputRef=useRef<HTMLInputElement>(null);
+  const baseMestreRef=useRef<HTMLInputElement>(null);
+  const[limiteDisp,setLimiteDisp]=useState(appState.limiteDisparoDiario||20);
   const defaultCFG:DREConfig={modelo:"investidor",pctEspaco:50,pctImposto:7,pctApp:7,fixoInternet:260,fixoAluguel:0,energiaTipo:"incluido",energiaKwh:0,usinaFixo:208.37,invNome:"FL BR SOLUÇÕES SUSTENTÁVEIS LTDA",invPct:50,invTotal:150000,invPago:100000,invDividaPrio:14705.39,invAmort:1846.49,propriaInstalacao:100000,propriaAmort:0,solarProprio:false,custoParceiro:0.80};
   const dreDefaults:Record<string,Partial<DREConfig>>={
     costa:{modelo:"investidor",pctEspaco:50,invNome:"FL BR SOLUÇÕES SUSTENTÁVEIS LTDA",invPct:50,invTotal:150000,invPago:100000,solarProprio:true,custoParceiro:0.80},
@@ -1429,10 +1755,37 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
       {/* CONTATOS */}
       {activeSection==="contatos"&&(
         <>
-          <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#93c5fd",marginBottom:16}}>ℹ️ Importe o CSV de usuários. Estação detectada automaticamente.</div>
+          {/* BASE MESTRE */}
+          <div style={{background:"rgba(0,229,160,0.06)",border:"1px solid rgba(0,229,160,0.2)",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green,marginBottom:6}}>🗃️ Base Mestre de Usuários</div>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:10,lineHeight:1.6}}>
+              CSV exportado da Spott (aba Usuários → Exportar CSV). Importar 1x/mês.<br/>
+              {Object.keys(appState.baseMestre).length > 0 && (
+                <span style={{color:T.green}}>✅ {Object.keys(appState.baseMestre).length} usuários · {Object.values(appState.baseMestre).filter(u=>u.temTel).length} com telefone</span>
+              )}
+            </div>
+            <input
+              type="file" accept=".csv,.txt" style={{display:"none"}}
+              ref={baseMestreRef}
+              onChange={async e=>{
+                const file=e.target.files?.[0];if(!file)return;
+                try{
+                  const text=await file.text();
+                  const base=parseBaseMestre(text);
+                  onSave({baseMestre:base});
+                  setUploadStatus(`✅ Base mestre: ${Object.keys(base).length} usuários · ${Object.values(base).filter(u=>u.temTel).length} com telefone`);
+                }catch(err){setUploadStatus(`❌ ${(err as Error).message}`);}
+                e.target.value="";
+              }}
+            />
+            <button onClick={()=>baseMestreRef.current?.click()} style={{background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green,padding:"8px 20px",borderRadius:8,fontSize:12,cursor:"pointer",fontFamily:T.mono,fontWeight:600}}>
+              ⬆️ Importar Base Mestre (Spott CSV)
+            </button>
+          </div>
+          <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#93c5fd",marginBottom:16}}>ℹ️ Importe também o CSV de contatos por estação. Estação detectada automaticamente.</div>
           <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16,textAlign:"center"}}>
             <div style={{fontSize:28,marginBottom:10}}>📂</div>
-            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text,marginBottom:5}}>Importar CSV de Usuários</div>
+            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text,marginBottom:5}}>Importar CSV de Contatos por Estação</div>
             <input ref={inputRef} type="file" accept=".csv,.txt" style={{display:"none"}} onChange={e=>{if(e.target.files?.[0])handleContactUpload(e.target.files[0]);}}/>
             <button onClick={()=>inputRef.current?.click()} style={{background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green,padding:"10px 24px",borderRadius:10,fontSize:13,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>Selecionar CSV</button>
             {uploadStatus&&<div style={{marginTop:12,fontFamily:T.mono,fontSize:11,color:uploadStatus.startsWith("✅")?T.green:T.red}}>{uploadStatus}</div>}
@@ -1471,6 +1824,117 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
             {cfg.modelo==="propria"&&(<><div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.12em",textTransform:"uppercase" as const,margin:"12px 0 10px",borderTop:`1px solid ${T.border}`,paddingTop:12}}>Loja Própria</div><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10}}>{inp("propriaInstalacao","Custo Instalação","number")}{inp("propriaAmort","Já Amortizado","number")}</div></>)}
             <label style={{display:"flex",alignItems:"center",gap:8,marginTop:14,cursor:"pointer",fontFamily:T.mono,fontSize:11,color:T.text2}}><input type="checkbox" checked={cfg.solarProprio} onChange={e=>setCfg(p=>({...p,solarProprio:e.target.checked}))} style={{accentColor:"#ffd600",width:14,height:14}}/>☀️ Usina Solar (energia = R$0)</label>
           </Panel>
+
+          {/* TABELA DE PAYBACK LINHA A LINHA */}
+          {cfg.modelo==="investidor"&&(()=>{
+            const diasNoMes=30;
+            const retMensalBruto=cfg.invPct>0?1:0; // placeholder para estrutura
+            // Calcular retorno mensal baseado nos valores configurados
+            // Usamos os valores do DRE Config diretamente
+            const invTotal=cfg.invTotal||0;
+            const invPago=cfg.invPago||0;
+            const invDividaPrio=cfg.invDividaPrio||0;
+            const invAmort=cfg.invAmort||0;
+            const invPct=cfg.invPct||50;
+            // Projeção baseada em retorno mensal médio — usa o retorno atual se disponível
+            // Como não temos sessions aqui, mostramos a estrutura de amortização
+            const totalDevido=invDividaPrio+Math.max(0,invTotal-invPago);
+            const jaAmort=invAmort;
+            const falta=Math.max(0,totalDevido-jaAmort);
+            // Gerar linhas de payback mês a mês (simulação baseada em retorno estimado)
+            // Retorno estimado: usuário preenche "retorno mensal estimado" ou calculamos
+            const [retMensal,setRetMensal]=useState(0);
+            const linhas=[];
+            if(retMensal>0&&falta>0){
+              let saldo=falta;
+              let mes=1;
+              let amortAcum=jaAmort;
+              while(saldo>0&&mes<=120){
+                const amortMes=Math.min(retMensal,saldo);
+                amortAcum+=amortMes;
+                saldo-=amortMes;
+                const pct=totalDevido>0?(amortAcum/totalDevido)*100:0;
+                linhas.push({mes,amortMes,amortAcum,saldo:Math.max(0,saldo),pct});
+                mes++;
+              }
+            }
+            return(
+              <Panel style={{marginTop:14}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                  <div><div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text}}>📅 Projeção de Payback — Mês a Mês</div><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginTop:2}}>Dívida total: {brl(totalDevido)} · Já amortizado: {brl(jaAmort)} · Saldo: {brl(falta)}</div></div>
+                </div>
+                {/* Barra de progresso geral */}
+                <div style={{marginBottom:16}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:5}}>
+                    <span>Amortização atual</span>
+                    <span style={{color:T.green,fontWeight:600}}>{totalDevido>0?((jaAmort/totalDevido)*100).toFixed(1):0}%</span>
+                  </div>
+                  <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden",border:`1px solid ${T.border}`}}>
+                    <div style={{height:"100%",width:`${totalDevido>0?Math.min(100,(jaAmort/totalDevido)*100):0}%`,background:T.green,borderRadius:3}}/>
+                  </div>
+                </div>
+                {/* Input retorno mensal */}
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"10px 12px",background:T.bg3,borderRadius:10,border:`1px solid ${T.border}`}}>
+                  <span style={{fontFamily:T.mono,fontSize:11,color:T.text2,whiteSpace:"nowrap"}}>💰 Retorno mensal ao investidor (R$):</span>
+                  <input type="number" min={0} value={retMensal||""} placeholder="Ex: 3500" onChange={e=>setRetMensal(+e.target.value||0)} style={{flex:1,background:"transparent",border:"none",color:T.amber,fontFamily:T.mono,fontSize:13,fontWeight:600,outline:"none"}}/>
+                </div>
+                {retMensal<=0&&(
+                  <div style={{fontFamily:T.mono,fontSize:11,color:T.text3,textAlign:"center",padding:"16px 0"}}>
+                    ℹ️ Insira o retorno mensal estimado para ver a projeção mês a mês
+                  </div>
+                )}
+                {retMensal>0&&linhas.length>0&&(
+                  <>
+                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:8}}>
+                      Payback completo em <span style={{color:T.green,fontWeight:700}}>{linhas.length} {linhas.length===1?"mês":"meses"}</span> · {(linhas.length/12).toFixed(1)} anos
+                    </div>
+                    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",maxHeight:320,overflowY:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
+                        <thead style={{position:"sticky",top:0,background:T.bg2}}>
+                          <tr>
+                            <th style={TH}>Mês</th>
+                            <th style={THR}>Retorno</th>
+                            <th style={THR}>Amort. Acum.</th>
+                            <th style={THR}>Saldo Dev.</th>
+                            <th style={THR}>%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {linhas.map((l,i)=>{
+                            const isQuitado=l.saldo===0;
+                            const isMarcante=l.mes%6===0||isQuitado;
+                            return(
+                              <tr key={l.mes} style={{background:isQuitado?"rgba(0,229,160,0.08)":isMarcante?"rgba(255,255,255,0.02)":""}}>
+                                <td style={{...TD,color:isMarcante?T.text:T.text2,fontWeight:isMarcante?700:400}}>
+                                  {isQuitado?"✅ ":""}{l.mes}
+                                </td>
+                                <td style={{...TDR,color:T.amber}}>{brl(l.amortMes)}</td>
+                                <td style={{...TDR,color:T.green}}>{brl(l.amortAcum)}</td>
+                                <td style={{...TDR,color:l.saldo===0?T.green:T.red}}>{l.saldo===0?"Quitado":brl(l.saldo)}</td>
+                                <td style={{...TDR,color:T.text2,fontSize:10}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                                    <div style={{width:32,height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}>
+                                      <div style={{height:"100%",width:`${l.pct}%`,background:l.pct>=100?T.green:T.amber,borderRadius:2}}/>
+                                    </div>
+                                    {l.pct.toFixed(0)}%
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+                {retMensal>0&&falta===0&&(
+                  <div style={{background:"rgba(0,229,160,0.08)",border:"1px solid rgba(0,229,160,0.25)",borderRadius:10,padding:"14px 16px",fontFamily:T.mono,fontSize:12,color:T.green,textAlign:"center"}}>
+                    ✅ Investimento já quitado! Saldo devedor: R$ 0,00
+                  </div>
+                )}
+              </Panel>
+            );
+          })()}
         </>
       )}
 
@@ -1531,6 +1995,14 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
           </div>
           {zapiTestResult&&(<div style={{fontFamily:T.mono,fontSize:12,color:zapiTestResult.startsWith("✅")?T.green:zapiTestResult.startsWith("⚠️")?T.amber:T.red,padding:"10px 12px",background:"rgba(255,255,255,0.04)",borderRadius:8,marginBottom:14}}>{zapiTestResult}</div>)}
           <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:"10px 12px",fontFamily:T.mono,fontSize:11,color:"#93c5fd"}}>ℹ️ Configure também as variáveis de ambiente no Vercel para maior segurança.</div>
+          <div style={{marginTop:14,padding:"14px 16px",background:T.bg3,borderRadius:10,border:`1px solid ${T.border}`}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:8}}>📊 Limite de disparos por dia</div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <input type="number" min={1} max={100} value={limiteDisp} onChange={e=>setLimiteDisp(+e.target.value||20)} style={{width:80,background:T.bg2,border:`1px solid ${T.border}`,color:T.text,padding:"7px 10px",borderRadius:8,fontSize:14,fontFamily:T.mono,textAlign:"center"}}/>
+              <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>mensagens/dia · recomendado: 20</span>
+              <button onClick={()=>onSave({limiteDisparoDiario:limiteDisp})} style={{background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green,padding:"7px 14px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:T.mono,marginLeft:"auto"}}>💾 Salvar</button>
+            </div>
+          </div>
         </Panel>
       )}
     </div>
@@ -2012,6 +2484,8 @@ export default function Home() {
       // deep merge dreConfigs e contatos
       if (partial.dreConfigs) next.dreConfigs = { ...prev.dreConfigs, ...partial.dreConfigs };
       if (partial.contatos) next.contatos = { ...prev.contatos, ...partial.contatos };
+      if (partial.baseMestre) next.baseMestre = { ...prev.baseMestre, ...partial.baseMestre };
+      if (partial.userOverrides) next.userOverrides = { ...prev.userOverrides, ...partial.userOverrides };
       saveState(next);
       return next;
     });
