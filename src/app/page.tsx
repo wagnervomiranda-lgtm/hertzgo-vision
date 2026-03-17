@@ -22,13 +22,13 @@ function useFonts() {
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState<boolean | null>(null);
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
+    const check = () => setIsMobile(window.innerWidth < 900);
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
   // null = ainda hidratando, trata como mobile para evitar flash no iPhone
-  return isMobile === null ? (typeof window !== "undefined" ? window.innerWidth < 768 : false) : isMobile;
+  return isMobile === null ? (typeof window !== "undefined" ? window.innerWidth < 900 : false) : isMobile;
 }
 
 // ─── LOGO SVG ────────────────────────────────────────────────────────────────
@@ -1552,6 +1552,348 @@ function gerarDreHTML(dreItems:{lbl:string;val:number;main?:boolean;result?:bool
 // são idênticas à versão original — mantidas integralmente
 // (omitidas aqui por tamanho — são copiadas do original abaixo via spread)
 
+function gerarRelatorioEU(sessions:Session[],appState:AppState,station:string):string{
+  const ok=sessions.filter(s=>s.hubKey===station&&!s.cancelled&&s.energy>0);
+  const todos=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const cfg=appState.dreConfigs[station]||null;
+  const datas=ok.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const d=calcDREv2(ok,cfg,periodDays);
+  const users=classificarUsuarios(ok);
+  const motoristas=users.filter(u=>u.isMotorista);
+  const novos=users.slice(0,5);
+  const meta=appState.metas["global"]||0;
+  const pctMeta=meta>0?Math.min(150,(d.faturMensal/meta)*100):0;
+  const metaColor=pctMeta>=100?"var(--green)":pctMeta>=75?"var(--amber)":"var(--red)";
+  const hs=calcHealthScore(sessions,cfg,station);
+  const hsColor=hs.status==="saudavel"?"var(--green)":hs.status==="atencao"?"var(--amber)":"var(--red)";
+  const cover=gerarCoverHTML(
+    "Relatório Executivo · Uso Interno",
+    "Resumo",`Executivo.`,
+    `${hubNome(station)} · Período ${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`,
+    "Gestão Interna","HertzGo Operations",
+    hubNome(station),`${periodDays} dias de operação`,
+    [{val:brlFmt(d.bruto),lbl:"Receita Bruta",sub:`${brlFmt(d.faturMensal)}/mês proj.`,cls:"g"},
+     {val:brlFmt(d.ll),lbl:"Lucro Líquido",sub:`${d.margem.toFixed(1)}% margem`,cls:"t"},
+     {val:`${d.totalSess}`,lbl:"Sessões",sub:`${(d.totalSess/periodDays).toFixed(1)}/dia`,cls:"a"},
+     {val:`${d.totalKwh.toFixed(0)} kWh`,lbl:"Energia",sub:`${(d.totalKwh/periodDays).toFixed(0)}/dia`,cls:"p"}]
+  );
+  const dreSection=cfg?`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">01 — Financeiro</div><h2 class="section-h2">DRE do Período</h2></div>
+      <span class="section-tag tag-green">Atualizado</span>
+    </div>
+    ${gerarDreHTML(d.dreItems,cfg.invNome||"Investidor",cfg.modelo==="investidor"?cfg.invPct:0,d.repInv,d.repHz,d.margem,d.ll)}
+  </div>`:"";
+  const invSection=cfg&&cfg.modelo==="investidor"?`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">02 — Investimento</div><h2 class="section-h2">Retorno ao Investidor</h2></div>
+      <span class="section-tag tag-amber">Mensal</span>
+    </div>
+    <div class="kpi-invest">
+      <div class="ki g"><div class="ki-lbl">Retorno Período</div><div class="ki-val">${brlFmt(d.repInv)}</div><div class="ki-sub">${brlFmt(d.retMensalInv)}/mês projetado</div></div>
+      <div class="ki t"><div class="ki-lbl">Rentabilidade Anual</div><div class="ki-val">${d.rentAnual.toFixed(1)}% a.a.</div><div class="ki-sub">Sobre ${brlFmt(cfg.invTotal)} investido</div></div>
+      <div class="ki a"><div class="ki-lbl">Payback Estimado</div><div class="ki-val">${d.mesesPay===Infinity?"—":d.mesesPay<12?Math.ceil(d.mesesPay)+"m":(d.mesesPay/12).toFixed(1)+"a"}</div><div class="ki-sub">Saldo devedor: ${brlFmt(d.faltaAmort)}</div></div>
+    </div>
+    <div class="payback-bar-wrap" style="background:var(--bg3);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;">
+      <div style="padding:16px 24px 8px;font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.12em;">Progresso de Amortização</div>
+      <div style="padding:0 24px 20px;">
+        <div class="payback-bar-track"><div class="payback-bar-fill" style="width:${d.pTotal.toFixed(1)}%"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;font-family:var(--mono);color:var(--text2);">
+          <span>${d.pTotal.toFixed(1)}% amortizado</span><span>${brlFmt(d.faltaAmort)} restante</span>
+        </div>
+      </div>
+    </div>
+  </div>`:"";
+  const opSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">03 — Operação</div><h2 class="section-h2">Indicadores Operacionais</h2></div>
+      <span class="section-tag ${hs.status==="saudavel"?"tag-green":hs.status==="atencao"?"tag-amber":"tag-red"}">Health ${hs.total}/100</span>
+    </div>
+    <div class="kpi-grid cols4" style="margin-bottom:24px;">
+      <div class="kpi"><div class="kpi-icon">⚡</div><div class="kpi-lbl">Sessões/Dia</div><div class="kpi-val" style="color:var(--green)">${(d.totalSess/periodDays).toFixed(1)}</div><div class="kpi-detail">Meta: 12/dia</div><div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,(d.totalSess/periodDays)/12*100).toFixed(0)}%;background:var(--green)"></div></div></div>
+      <div class="kpi"><div class="kpi-icon">💰</div><div class="kpi-lbl">Receita/Dia</div><div class="kpi-val" style="color:var(--teal)">${brlFmt(d.bruto/periodDays)}</div><div class="kpi-detail">Proj. ${brlFmt(d.faturMensal)}/mês</div></div>
+      <div class="kpi"><div class="kpi-icon">🔋</div><div class="kpi-lbl">kWh/Dia</div><div class="kpi-val" style="color:var(--amber)">${(d.totalKwh/periodDays).toFixed(0)}</div><div class="kpi-detail">Preço: ${brlFmt(d.priceKwh)}/kWh</div></div>
+      <div class="kpi"><div class="kpi-icon">🎟️</div><div class="kpi-lbl">Ticket Médio</div><div class="kpi-val" style="color:var(--purple)">${brlFmt(d.ticket)}</div><div class="kpi-detail">${d.totalSess} sessões totais</div></div>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:20px;">
+      <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;">Diagnóstico Health Score</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7;font-family:var(--mono);">${hs.diagnostico}</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px;">
+        <div style="padding:12px;background:var(--bg2);border-radius:8px;"><div style="font-size:9px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">Financeiro</div><div style="font-size:18px;font-weight:800;color:${hsColor};font-family:var(--mono)">${hs.financeiro}/40</div><div style="font-size:10px;color:var(--text2);font-family:var(--mono);margin-top:2px;">${hs.financeiroDet}</div></div>
+        <div style="padding:12px;background:var(--bg2);border-radius:8px;"><div style="font-size:9px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">Operacional</div><div style="font-size:18px;font-weight:800;color:${hsColor};font-family:var(--mono)">${hs.operacional}/35</div><div style="font-size:10px;color:var(--text2);font-family:var(--mono);margin-top:2px;">${hs.operacionalDet}</div></div>
+        <div style="padding:12px;background:var(--bg2);border-radius:8px;"><div style="font-size:9px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">Investidor</div><div style="font-size:18px;font-weight:800;color:${hsColor};font-family:var(--mono)">${hs.investidor}/25</div><div style="font-size:10px;color:var(--text2);font-family:var(--mono);margin-top:2px;">${hs.investidorDet}</div></div>
+      </div>
+    </div>
+  </div>`;
+  const usersSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">04 — Usuários</div><h2 class="section-h2">Base de Clientes</h2></div>
+      <span class="section-tag tag-teal">${users.length} únicos</span>
+    </div>
+    <div class="kpi-grid cols4" style="margin-bottom:24px;">
+      <div class="kpi"><div class="kpi-lbl">Total Usuários</div><div class="kpi-val" style="color:var(--green)">${users.length}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Motoristas App</div><div class="kpi-val" style="color:var(--red)">${motoristas.length}</div><div class="kpi-detail">${users.length>0?(motoristas.length/users.length*100).toFixed(0):0}% da base</div></div>
+      <div class="kpi"><div class="kpi-lbl">Heavy Users</div><div class="kpi-val" style="color:var(--amber)">${users.filter(u=>u.isHeavy).length}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Shoppers</div><div class="kpi-val" style="color:var(--teal)">${users.filter(u=>!u.isParceiro&&!u.isMotorista&&!u.isHeavy).length}</div></div>
+    </div>
+    <table class="meta-table">
+      <thead><tr><th>#</th><th>Usuário</th><th>Perfil</th><th style="text-align:right">kWh</th><th style="text-align:right">Receita</th></tr></thead>
+      <tbody>${users.sort((a,b)=>b.rev-a.rev).slice(0,10).map((u,i)=>`<tr><td>${i+1}</td><td>${u.user}</td><td>${u.perfil}</td><td style="text-align:right;font-family:var(--mono)">${u.kwh.toFixed(1)}</td><td style="text-align:right;font-family:var(--mono);color:var(--green)">${brlFmt(u.rev)}</td></tr>`).join("")}</tbody>
+    </table>
+  </div>`;
+  const metaSection=meta>0?`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">05 — Metas</div><h2 class="section-h2">Pacing Mensal</h2></div>
+      <span class="section-tag ${pctMeta>=100?"tag-green":pctMeta>=75?"tag-amber":"tag-red"}">${pctMeta.toFixed(0)}% da meta</span>
+    </div>
+    <div class="kpi-grid cols3" style="margin-bottom:24px;">
+      <div class="kpi"><div class="kpi-lbl">Meta Mensal</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(meta)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Projeção</div><div class="kpi-val" style="color:${metaColor}">${brlFmt(d.faturMensal)}</div><div class="kpi-detail">${pctMeta.toFixed(0)}% da meta</div></div>
+      <div class="kpi"><div class="kpi-lbl">Resultado</div><div class="kpi-val" style="color:${pctMeta>=100?"var(--green)":"var(--red)"}">${pctMeta>=100?"✅ No alvo":"⚠️ Abaixo"}</div></div>
+    </div>
+    <div style="background:var(--bg3);border-radius:8px;border:1px solid var(--border);height:8px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:${Math.min(100,pctMeta).toFixed(0)}%;background:${metaColor};border-radius:8px;transition:width .3s"></div></div>
+  </div>`:"";
+  const planoSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">06 — Plano de Ação</div><h2 class="section-h2">Próximos Passos</h2></div>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card pri1"><div class="step-title">🔴 Ação Imediata</div><div class="step-desc">Contatar motoristas de app em risco de churn nas estações próprias. Prioridade máxima para VIPs com mais de 14 dias sem recarga.</div></div>
+      <div class="step-card pri2"><div class="step-title">🟡 Curto Prazo (7 dias)</div><div class="step-desc">Enviar mensagens de boas-vindas para novos usuários nas estações próprias. Ativar cupons de fidelização para heavy users.</div></div>
+      <div class="step-card pri3"><div class="step-title">🟢 Médio Prazo (30 dias)</div><div class="step-desc">Expandir cobertura de telefones na base de contatos. Meta: acima de 70% de cobertura para CRM efetivo.</div></div>
+      <div class="step-card pri4"><div class="step-title">🔵 Estratégico (90 dias)</div><div class="step-desc">Avaliar expansão para novos pontos com base na demanda atual. Analisar viabilidade de novas parcerias na região.</div></div>
+    </div>
+  </div>`;
+  return`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Resumo Executivo — ${hubNome(station)}</title><style>${FLBR_CSS}</style></head><body><button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>${cover}${dreSection}${invSection}${opSection}${usersSection}${metaSection}${planoSection}<footer class="footer"><div class="footer-left">HertzGo · CNPJ 27.713.035/0001-24 · Brasília · DF<br>Gerado em ${new Date().toLocaleString("pt-BR")}</div><div class="footer-right">Confidencial · Uso Interno<br>${hubNome(station)} · Vision v5.2</div></footer></body></html>`;
+}
+
+function gerarRelatorioSocioV2(sessions:Session[],appState:AppState,station:string):string{
+  const ok=sessions.filter(s=>s.hubKey===station&&!s.cancelled&&s.energy>0);
+  const cfg=appState.dreConfigs[station]||null;
+  if(!cfg)return`<!DOCTYPE html><html><body style="background:#080a0f;color:#e8edf5;font-family:sans-serif;padding:40px;"><h1>Configure o DRE para ${hubNome(station)} antes de gerar este relatório.</h1></body></html>`;
+  const datas=ok.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const d=calcDREv2(ok,cfg,periodDays);
+  const cover=gerarCoverHTML(
+    "Relatório de Sócio · Confidencial",
+    "Relatório","Sócio.",
+    `${hubNome(station)} · ${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`,
+    "Destinatário",cfg.invNome||"Investidor",
+    hubNome(station),`${periodDays} dias · Modelo ${cfg.modelo}`,
+    [{val:brlFmt(d.bruto),lbl:"Receita Bruta",sub:"período",cls:"g"},
+     {val:brlFmt(d.ll),lbl:"Lucro Líquido",sub:`${d.margem.toFixed(1)}% margem`,cls:"t"},
+     {val:brlFmt(d.repInv),lbl:`Retorno ${cfg.invNome?.split(" ")[0]||"Investidor"}`,sub:`${cfg.invPct}% do LL`,cls:"a"},
+     {val:brlFmt(d.faturMensal),lbl:"Proj. Mensal",sub:"base 30 dias",cls:"p"}]
+  );
+  const dreSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">01 — DRE</div><h2 class="section-h2">Demonstrativo de Resultado</h2></div>
+      <span class="section-tag tag-green">Período ${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}</span>
+    </div>
+    ${gerarDreHTML(d.dreItems,cfg.invNome||"Investidor",cfg.invPct,d.repInv,d.repHz,d.margem,d.ll)}
+  </div>`;
+  const kpiSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">02 — KPIs</div><h2 class="section-h2">Indicadores do Período</h2></div>
+    </div>
+    <div class="kpi-grid cols4">
+      <div class="kpi"><div class="kpi-lbl">Sessões</div><div class="kpi-val" style="color:var(--green)">${numFmt(d.totalSess)}</div><div class="kpi-detail">${(d.totalSess/periodDays).toFixed(1)}/dia</div></div>
+      <div class="kpi"><div class="kpi-lbl">Energia</div><div class="kpi-val" style="color:var(--teal)">${numFmt(Math.round(d.totalKwh))} kWh</div><div class="kpi-detail">${(d.totalKwh/periodDays).toFixed(0)}/dia</div></div>
+      <div class="kpi"><div class="kpi-lbl">Preço/kWh</div><div class="kpi-val" style="color:var(--amber)">${brlFmt(d.priceKwh)}</div><div class="kpi-detail">Ticket: ${brlFmt(d.ticket)}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Proj. Anual</div><div class="kpi-val" style="color:var(--purple)">${brlFmt(d.faturAnual)}</div><div class="kpi-detail">receita bruta</div></div>
+    </div>
+  </div>`;
+  const paybackSection=cfg.modelo==="investidor"?`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">03 — Retorno</div><h2 class="section-h2">Payback & Rentabilidade</h2></div>
+      <span class="section-tag tag-amber">${cfg.invNome?.split(" ")[0]||"Investidor"}</span>
+    </div>
+    <div class="payback-wrap">
+      <div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:16px;">
+          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;">Amortização do Aporte</div>
+          <div class="payback-bar-track"><div class="payback-bar-fill" style="width:${d.pTotal.toFixed(1)}%"></div></div>
+          <div style="display:flex;justify-content:space-between;margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text2);">
+            <span>${d.pTotal.toFixed(1)}% pago</span><span>${brlFmt(d.faltaAmort)} restante</span>
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:20px;">
+          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px;">Distribuição mensal projetada</div>
+          <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--teal)">${brlFmt(d.retMensalInv)}<span style="font-size:14px;color:var(--text2)">/mês</span></div>
+        </div>
+      </div>
+      <div class="payback-info">
+        <div class="pb-card"><div class="pb-card-lbl">Rentabilidade Anual</div><div class="pb-card-val">${d.rentAnual.toFixed(1)}% a.a.</div><div class="pb-card-sub">Sobre ${brlFmt(cfg.invTotal)} investido<br>Acima do CDI (${d.rentAnual>13?"✅ sim":"⚠️ verificar"})</div></div>
+        <div class="pb-card"><div class="pb-card-lbl">Payback Estimado</div><div class="pb-card-val">${d.mesesPay===Infinity?"—":d.mesesPay<12?Math.ceil(d.mesesPay)+" meses":(d.mesesPay/12).toFixed(1)+" anos"}</div><div class="pb-card-sub">Baseado no retorno atual<br>Saldo: ${brlFmt(d.faltaAmort)}</div></div>
+      </div>
+    </div>
+  </div>`:"";
+  return`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relatório Sócio — ${hubNome(station)}</title><style>${FLBR_CSS}</style></head><body><button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>${cover}${dreSection}${kpiSection}${paybackSection}<footer class="footer"><div class="footer-left">HertzGo · CNPJ 27.713.035/0001-24 · Brasília · DF<br>Gerado em ${new Date().toLocaleString("pt-BR")}</div><div class="footer-right">Confidencial · ${cfg.invNome||"Investidor"}<br>${hubNome(station)} · Vision v5.2</div></footer></body></html>`;
+}
+
+function gerarRelatorioOpV2(sessions:Session[],appState:AppState,station:string):string{
+  const ok=sessions.filter(s=>s.hubKey===station&&!s.cancelled&&s.energy>0);
+  const datas=ok.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const d=calcDREv2(ok,null,periodDays);
+  const users=classificarUsuarios(ok);
+  const hourData=Array(24).fill(0).map(()=>({sess:0}));
+  ok.forEach(s=>{if(s.startHour!==null)hourData[s.startHour].sess++;});
+  const picoHour=hourData.reduce((max,h,i)=>h.sess>hourData[max].sess?i:max,0);
+  const cancelled=sessions.filter(s=>s.hubKey===station&&s.cancelled);
+  const cancelRate=ok.length+cancelled.length>0?cancelled.length/(ok.length+cancelled.length):0;
+  const withOv=ok.filter(s=>s.overstayMin!==null&&s.overstayMin>0);
+  const avgOv=withOv.length>0?withOv.reduce((a,s)=>a+(s.overstayMin||0),0)/withOv.length:0;
+  const cover=gerarCoverHTML(
+    "Relatório Operacional · Uso Interno",
+    "Relatório","Operacional.",
+    `${hubNome(station)} · ${dtMin.toLocaleDateString("pt-BR")} → ${dtMax.toLocaleDateString("pt-BR")}`,
+    "Equipe","Operações HertzGo",
+    hubNome(station),`${periodDays} dias`,
+    [{val:`${numFmt(d.totalSess)}`,lbl:"Sessões",sub:`${(d.totalSess/periodDays).toFixed(1)}/dia`,cls:"g"},
+     {val:`${numFmt(Math.round(d.totalKwh))} kWh`,lbl:"Energia",sub:`${(d.totalKwh/periodDays).toFixed(0)}/dia`,cls:"t"},
+     {val:`${(cancelRate*100).toFixed(1)}%`,lbl:"Cancelamentos",sub:cancelRate<=0.08?"✅ ok":"⚠️ atenção",cls:"a"},
+     {val:`${picoHour}h`,lbl:"Pico de Uso",sub:`${hourData[picoHour].sess} sessões`,cls:"p"}]
+  );
+  const demandaSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">01 — Demanda</div><h2 class="section-h2">Padrão de Uso</h2></div>
+    </div>
+    <div class="demanda-grid">
+      <div class="dem-card"><div class="dem-card-tag" style="color:var(--green)">Sessões/Dia</div><div class="dem-card-val" style="color:var(--green)">${(d.totalSess/periodDays).toFixed(1)}</div><div class="dem-card-sub">Total: ${numFmt(d.totalSess)}</div></div>
+      <div class="dem-card"><div class="dem-card-tag" style="color:var(--amber)">kWh/Dia</div><div class="dem-card-val" style="color:var(--amber)">${(d.totalKwh/periodDays).toFixed(0)}</div><div class="dem-card-sub">Total: ${numFmt(Math.round(d.totalKwh))} kWh</div></div>
+      <div class="dem-card"><div class="dem-card-tag pico-tag">Pico</div><div class="dem-card-val" style="color:var(--amber)">${picoHour}h–${picoHour+1}h</div><div class="dem-card-sub">${hourData[picoHour].sess} sessões no horário</div></div>
+      <div class="dem-card"><div class="dem-card-tag" style="color:${cancelRate<=0.08?"var(--green)":"var(--red)"}">Cancelamentos</div><div class="dem-card-val" style="color:${cancelRate<=0.08?"var(--green)":"var(--red)"}">${(cancelRate*100).toFixed(1)}%</div><div class="dem-card-sub">${cancelled.length} de ${ok.length+cancelled.length}</div></div>
+      <div class="dem-card"><div class="dem-card-tag" style="color:${avgOv<=5?"var(--green)":"var(--amber)"}">Overstay Médio</div><div class="dem-card-val" style="color:${avgOv<=5?"var(--green)":"var(--amber)"}">${avgOv.toFixed(0)} min</div><div class="dem-card-sub">${withOv.length} ocorrências</div></div>
+      <div class="dem-card"><div class="dem-card-tag" style="color:var(--teal)">Ticket Médio</div><div class="dem-card-val" style="color:var(--teal)">${brlFmt(d.ticket)}</div><div class="dem-card-sub">${brlFmt(d.priceKwh)}/kWh</div></div>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:20px;">
+      <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;">Distribuição por Hora</div>
+      <div style="display:grid;grid-template-columns:repeat(24,1fr);gap:2px;">
+        ${hourData.map((h,hr)=>{const max=Math.max(...hourData.map(x=>x.sess),1);const pct=h.sess/max*100;return`<div title="${hr}h: ${h.sess}" style="height:48px;border-radius:3px;background:${h.sess>0?`rgba(0,229,160,${0.15+pct/100*0.85})`:"rgba(255,255,255,0.03)"};display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;"><span style="font-size:7px;color:rgba(255,255,255,0.5);font-family:var(--mono)">${h.sess>0?h.sess:""}</span></div>`;}).join("")}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-top:3px;">
+        ${Array.from({length:24},(_,hr)=>`<div style="font-size:7px;color:var(--text3);text-align:center;font-family:var(--mono)">${hr%6===0?hr+"h":""}</div>`).join("")}
+      </div>
+    </div>
+  </div>`;
+  const usersSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">02 — Usuários</div><h2 class="section-h2">Fidelização & Perfis</h2></div>
+      <span class="section-tag tag-teal">${users.length} usuários únicos</span>
+    </div>
+    <div class="kpi-grid cols4" style="margin-bottom:24px;">
+      <div class="kpi"><div class="kpi-lbl">Motoristas App</div><div class="kpi-val" style="color:var(--red)">${users.filter(u=>u.isMotorista).length}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Heavy Users</div><div class="kpi-val" style="color:var(--amber)">${users.filter(u=>u.isHeavy).length}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Shoppers</div><div class="kpi-val" style="color:var(--green)">${users.filter(u=>!u.isParceiro&&!u.isMotorista&&!u.isHeavy).length}</div></div>
+      <div class="kpi"><div class="kpi-lbl">Parceiros</div><div class="kpi-val" style="color:var(--blue)">${users.filter(u=>u.isParceiro).length}</div></div>
+    </div>
+    <table class="meta-table">
+      <thead><tr><th>#</th><th>Usuário</th><th>Perfil</th><th style="text-align:right">Sessões</th><th style="text-align:right">kWh</th></tr></thead>
+      <tbody>${users.sort((a,b)=>b.kwh-a.kwh).slice(0,10).map((u,i)=>`<tr><td>${i+1}</td><td>${u.user}</td><td>${u.perfil}</td><td style="text-align:right;font-family:var(--mono)">${u.sess}</td><td style="text-align:right;font-family:var(--mono);color:var(--green)">${u.kwh.toFixed(1)}</td></tr>`).join("")}</tbody>
+    </table>
+  </div>`;
+  return`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relatório Operacional — ${hubNome(station)}</title><style>${FLBR_CSS}</style></head><body><button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>${cover}${demandaSection}${usersSection}<footer class="footer"><div class="footer-left">HertzGo · CNPJ 27.713.035/0001-24 · Brasília · DF<br>Gerado em ${new Date().toLocaleString("pt-BR")}</div><div class="footer-right">Uso Interno — Equipe Operações<br>${hubNome(station)} · Vision v5.2</div></footer></body></html>`;
+}
+
+function gerarApresentacaoV2(sessions:Session[],appState:AppState):string{
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const datas=ok.map(s=>s.date.getTime());
+  const dtMin=datas.length?new Date(Math.min(...datas)):new Date();
+  const dtMax=datas.length?new Date(Math.max(...datas)):new Date();
+  const periodDays=Math.max(1,Math.round((dtMax.getTime()-dtMin.getTime())/86400000)+1);
+  const totalRev=ok.reduce((a,s)=>a+s.value,0);
+  const totalKwh=ok.reduce((a,s)=>a+s.energy,0);
+  const totalSess=ok.length;
+  const hubs=Array.from(new Set(ok.map(s=>s.hubKey)));
+  const users=classificarUsuarios(ok);
+  const faturMensal=totalRev/periodDays*30;
+  const cover=gerarCoverHTML(
+    "Apresentação Institucional · 2026",
+    "Rede","HertzGo.",
+    "Infraestrutura de recarga inteligente · Brasília · DF",
+    "Apresentado a","Investidores & Parceiros",
+    "Rede Completa — Todas as Estações",`${hubs.length} estações ativas · ${periodDays} dias de dados`,
+    [{val:`${hubs.length}`,lbl:"Estações Ativas",sub:"Brasília · DF",cls:"g"},
+     {val:`${numFmt(totalSess)}`,lbl:"Sessões",sub:`${(totalSess/periodDays).toFixed(1)}/dia`,cls:"t"},
+     {val:brlFmt(faturMensal),lbl:"Receita Mensal",sub:"projetada",cls:"a"},
+     {val:`${users.length}`,lbl:"Usuários Únicos",sub:"base ativa",cls:"p"}],
+    "Confidencial · Investidores"
+  );
+  const mercadoSection=`
+  <div class="section network-hero" style="text-align:left;padding:64px;">
+    <div style="font-size:10px;font-family:var(--mono);color:var(--teal);letter-spacing:.2em;text-transform:uppercase;margin-bottom:16px;">01 — Mercado</div>
+    <h2 style="font-size:clamp(28px,4vw,48px);font-weight:800;letter-spacing:-.02em;margin-bottom:24px;">O momento é <span style="color:var(--green)">agora.</span></h2>
+    <div class="market-grid">
+      <div class="market-card"><div class="market-card-lbl">Frota EV Brasil</div><div class="market-card-val" style="color:var(--green)">+150k</div><div class="market-card-desc">Veículos elétricos e híbridos plug-in em circulação no Brasil, com crescimento de 80% ao ano. Brasília lidera em concentração per capita.</div></div>
+      <div class="market-card"><div class="market-card-lbl">Infraestrutura</div><div class="market-card-val" style="color:var(--amber)">Crítica</div><div class="market-card-desc">A infraestrutura de recarga pública cresce em ritmo 5x mais lento que a frota. A janela de oportunidade para ocupar posição está aberta agora.</div></div>
+      <div class="market-card"><div class="market-card-lbl">Brasília</div><div class="market-card-val" style="color:var(--teal)">Top 3</div><div class="market-card-desc">Terceira cidade do Brasil em concentração de EVs, com renda per capita elevada e perfil de consumo compatível com a proposta HertzGo.</div></div>
+      <div class="market-card"><div class="market-card-lbl">Mercado Endereçável</div><div class="market-card-val" style="color:var(--purple)">R$2B+</div><div class="market-card-desc">Mercado de recarga pública no Brasil até 2030, segundo projeções da ABVE. HertzGo está posicionada nos mercados de maior densidade.</div></div>
+    </div>
+  </div>`;
+  const redeSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">02 — Rede</div><h2 class="section-h2">Nossa Presença em Brasília</h2></div>
+      <span class="section-tag tag-green">${hubs.length} estações ativas</span>
+    </div>
+    <div class="network-kpis" style="margin-bottom:32px;">
+      <div class="nk"><div class="nk-val">${hubs.length}</div><div class="nk-lbl">Estações</div></div>
+      <div class="nk"><div class="nk-val">${numFmt(totalSess)}</div><div class="nk-lbl">Sessões Realizadas</div></div>
+      <div class="nk"><div class="nk-val">${numFmt(Math.round(totalKwh))} kWh</div><div class="nk-lbl">Energia Entregue</div></div>
+    </div>
+    ${hubs.map(hub=>{
+      const hs=calcHealthScore(sessions,appState.dreConfigs[hub]||null,hub);
+      const color=hs.status==="saudavel"?"var(--green)":hs.status==="atencao"?"var(--amber)":"var(--red)";
+      const hubOk=ok.filter(s=>s.hubKey===hub);
+      const hubRev=hubOk.reduce((a,s)=>a+s.value,0);
+      return`<div class="station-row"><div class="sr-score" style="color:${color}">${hs.total}</div><div style="flex:1"><div style="font-size:15px;font-weight:700;margin-bottom:4px">${hubNome(hub)}</div><div style="font-size:11px;color:var(--text2);font-family:var(--mono)">${hubOk.length} sessões · ${brlFmt(hubRev)} · ${(ESTACAO_TIPO as Record<string,string>)[hub]||"contratual"}</div></div><div class="sr-bar"><div class="sr-fill" style="width:${hs.total}%;background:${color}"></div></div></div>`;
+    }).join("")}
+  </div>`;
+  const gestaoSection=`
+  <div class="section">
+    <div class="section-header">
+      <div><div class="section-title">03 — Gestão</div><h2 class="section-h2">Tecnologia & Operação</h2></div>
+      <span class="section-tag tag-teal">Vision v5.2</span>
+    </div>
+    <div class="gestao-grid">
+      <div class="gestao-card"><div class="gestao-icon">📊</div><div class="gestao-title">Dashboard Proprietário</div><div class="gestao-desc">HertzGo Vision — painel operacional em tempo real com DRE por estação, CRM automatizado, Health Score e relatórios para investidores.</div></div>
+      <div class="gestao-card"><div class="gestao-icon">📱</div><div class="gestao-title">CRM via WhatsApp</div><div class="gestao-desc">6 filas de comunicação automatizadas: qualificação de motoristas, migração para estações próprias, fidelização e recuperação de churn.</div></div>
+      <div class="gestao-card"><div class="gestao-icon">⚡</div><div class="gestao-title">Multi-plataforma</div><div class="gestao-desc">Integração com Spott e Move — as duas principais plataformas de recarga do Brasil — garantindo compatibilidade universal com EVs.</div></div>
+      <div class="gestao-card"><div class="gestao-icon">🔒</div><div class="gestao-title">Transparência Total</div><div class="gestao-desc">Relatórios mensais automáticos para investidores com DRE, payback, rentabilidade e distribuição do lucro líquido documentados.</div></div>
+    </div>
+  </div>`;
+  const ctaSection=`
+  <div class="section" style="text-align:center;padding:80px 64px;">
+    <div style="font-size:10px;font-family:var(--mono);color:var(--teal);letter-spacing:.2em;text-transform:uppercase;margin-bottom:16px;">04 — Próximo Passo</div>
+    <h2 style="font-size:clamp(32px,5vw,64px);font-weight:800;letter-spacing:-.03em;margin-bottom:16px;">Vamos <span style="color:var(--green)">conversar.</span></h2>
+    <p style="font-size:16px;color:var(--text2);max-width:600px;margin:0 auto 40px;line-height:1.7;">Uma conversa de 15 minutos. Apresentamos os números reais, o modelo de negócio e as oportunidades disponíveis.</p>
+    <div style="display:inline-flex;align-items:center;gap:16px;background:var(--bg2);border:1px solid rgba(0,230,118,.3);border-radius:16px;padding:24px 32px;">
+      <div style="font-size:32px">📱</div>
+      <div style="text-align:left"><div style="font-size:12px;font-family:var(--mono);color:var(--text3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px">Wagner Miranda · Fundador</div><div style="font-size:22px;font-weight:700;color:var(--green)">(61) 99803-7361</div><div style="font-size:12px;font-family:var(--mono);color:var(--text2)">WhatsApp · wagnervomiranda@gmail.com</div></div>
+    </div>
+  </div>`;
+  return`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pitch HertzGo — Rede de Eletropostos</title><style>${FLBR_CSS}</style></head><body><button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>${cover}${mercadoSection}${redeSection}${gestaoSection}${ctaSection}<footer class="footer"><div class="footer-left">HertzGo · CNPJ 27.713.035/0001-24 · Brasília · DF<br>Gerado em ${new Date().toLocaleString("pt-BR")}</div><div class="footer-right">Confidencial · Investidores & Parceiros<br>Vision v5.2 · (61) 99803-7361</div></footer></body></html>`;
+}
+
 function abrirHTMLv2(html:string,nome:string){const blob=new Blob([html],{type:"text/html"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`${nome}_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.html`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 function TabRelatorio({sessions,appState,onAddSessions}:{sessions:Session[];appState:AppState;onAddSessions:(s:Session[])=>void}){
@@ -1570,15 +1912,17 @@ function TabRelatorio({sessions,appState,onAddSessions}:{sessions:Session[];appS
   const hs=station?calcHealthScore(sessions,appState.dreConfigs[station]||null,station):null;
   const hsColor=hs?.status==="saudavel"?T.green:hs?.status==="atencao"?T.amber:T.red;
   const pad=isMobile?"16px 14px":"24px 28px";
-  // Placeholder para geração — usa as funções do original
   const gerar=async(tipo:"eu"|"socio"|"op"|"pitch")=>{
     setGerando(tipo);
     await new Promise(r=>setTimeout(r,80));
     try{
-      // As funções completas de geração são idênticas ao original
-      // Aqui chamamos funções que serão injetadas via merge com o original
-      alert(`Relatório "${tipo}" — funcionalidade de geração HTML mantida do original.\nEsta aba apenas teve o layout responsivo atualizado.`);
-    }catch(e){console.error(e);}
+      let html="";
+      if(tipo==="eu") html=gerarRelatorioEU(sessions,appState,station);
+      else if(tipo==="socio") html=gerarRelatorioSocioV2(sessions,appState,station);
+      else if(tipo==="op") html=gerarRelatorioOpV2(sessions,appState,station);
+      else if(tipo==="pitch") html=gerarApresentacaoV2(sessions,appState);
+      if(html) abrirHTMLv2(html,`hertzgo_${tipo}_${hubNome(station).replace(/\s+/g,"_")}`);
+    }catch(e){console.error(e);alert("Erro ao gerar relatório: "+(e as Error).message);}
     setGerando(null);
   };
   return(
