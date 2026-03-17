@@ -20,14 +20,15 @@ function useFonts() {
 
 // ─── RESPONSIVE HOOK ─────────────────────────────────────────────────────────
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState<boolean | null>(null);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
-  return isMobile;
+  // null = ainda hidratando, trata como mobile para evitar flash no iPhone
+  return isMobile === null ? (typeof window !== "undefined" ? window.innerWidth < 768 : false) : isMobile;
 }
 
 // ─── LOGO SVG ────────────────────────────────────────────────────────────────
