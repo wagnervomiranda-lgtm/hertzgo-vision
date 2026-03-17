@@ -1225,6 +1225,7 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
   const users=useMemo(()=>classificarUsuarios(ok),[ok]);
   const[zapiStatus,setZapiStatus]=useState<"unknown"|"ok"|"err">("unknown");
+  const[preview,setPreview]=useState<{user:string;hubK:string;msgId:string;template:string;cupom:string;tel:string;msg:string}|null>(null);
   const[respostas,setRespostas]=useState<{id:string;telefone:string;mensagem:string;resposta:string|null;criado_em:string}[]>([]);
   const[loadingResp,setLoadingResp]=useState(false);
   const buscarRespostas=async()=>{
@@ -1268,6 +1269,11 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
   const getMsgTemplate=(key:string)=>msgEdits[key]??appState.mensagens[key as keyof Mensagens]??"";
   const montarMsg=(template:string,nome:string,hubK:string,cupom:string="")=>template.replace(/\[nome\]/gi,nome.split(" ")[0]).replace(/\[local\]/gi,hubNome(hubK)).replace(/\[cupom\]/gi,cupom).replace(/\[beneficio\]/gi,"prioridade e desconto exclusivo");
 
+  const abrirPreview=(user:string,hubK:string,msgId:string,template:string,cupom:string="")=>{
+    const tel=getTel(user)||"";
+    const msg=montarMsg(template,user,hubK,cupom);
+    setPreview({user,hubK,msgId,template,cupom,tel,msg});
+  };
   const enviarUm=async(user:string,hubK:string,msgId:string,template:string,cupom:string="")=>{
     const tel=getTel(user);if(!tel)return;
     setSending(p=>({...p,[`${user}_${msgId}`]:true}));
@@ -1319,6 +1325,46 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
 
   return(
     <div style={{padding:"24px 28px"}}>
+      {/* MODAL PREVIEW */}
+      {preview&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:20,padding:32,maxWidth:560,width:"100%",position:"relative"}}>
+            <button onClick={()=>setPreview(null)} style={{position:"absolute",top:16,right:16,background:"transparent",border:"none",color:T.text3,fontSize:20,cursor:"pointer"}}>✕</button>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase",marginBottom:4}}>Preview da Mensagem</div>
+            <div style={{fontFamily:T.sans,fontSize:18,fontWeight:700,color:T.text,marginBottom:20}}>Como vai chegar no WhatsApp</div>
+            {/* Info do usuário */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+              <div style={{background:T.bg3,borderRadius:10,padding:"10px 14px"}}>
+                <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>Destinatário</div>
+                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text}}>{preview.user.split(" ").slice(0,2).join(" ")}</div>
+              </div>
+              <div style={{background:T.bg3,borderRadius:10,padding:"10px 14px"}}>
+                <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>Telefone</div>
+                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:preview.tel?T.green:T.red}}>{preview.tel||"⚠️ Sem telefone"}</div>
+              </div>
+            </div>
+            {/* Mensagem preview estilo WhatsApp */}
+            <div style={{background:"#1a2333",borderRadius:12,padding:20,marginBottom:20,position:"relative"}}>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.teal,marginBottom:10,letterSpacing:"0.1em",textTransform:"uppercase"}}>📱 Prévia WhatsApp</div>
+              <div style={{background:"#005c4b",borderRadius:"12px 12px 12px 2px",padding:"12px 16px",display:"inline-block",maxWidth:"85%"}}>
+                <div style={{fontFamily:"system-ui, sans-serif",fontSize:14,color:"#e9edef",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{preview.msg}</div>
+                <div style={{fontFamily:"system-ui, sans-serif",fontSize:11,color:"rgba(233,237,239,0.6)",textAlign:"right",marginTop:4}}>agora ✓✓</div>
+              </div>
+            </div>
+            {!preview.tel&&(
+              <div style={{background:"rgba(255,82,82,0.1)",border:"1px solid rgba(255,82,82,0.3)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:T.red,marginBottom:16}}>
+                ⚠️ Este usuário não tem telefone cadastrado — mensagem não pode ser enviada.
+              </div>
+            )}
+            <div style={{display:"flex",gap:12}}>
+              <button onClick={()=>setPreview(null)} style={{flex:1,padding:"12px",borderRadius:12,fontFamily:T.sans,fontSize:13,fontWeight:600,cursor:"pointer",background:"transparent",border:`1px solid ${T.border}`,color:T.text2}}>Cancelar</button>
+              <button onClick={()=>{if(!preview.tel)return;enviarUm(preview.user,preview.hubK,preview.msgId,preview.template,preview.cupom);setPreview(null);}} disabled={!preview.tel} style={{flex:2,padding:"12px",borderRadius:12,fontFamily:T.sans,fontSize:13,fontWeight:700,cursor:preview.tel?"pointer":"not-allowed",background:preview.tel?T.green:"rgba(255,255,255,0.05)",color:preview.tel?T.bg:T.text3,border:"none",opacity:preview.tel?1:0.5}}>
+                🚀 Confirmar e Enviar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* PAINEL RESPOSTAS Z-API */}
       <div style={{marginBottom:24}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -1438,7 +1484,7 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
                             <td style={{...TDR,color:T.text2}}>{u.kwh.toFixed(1)}</td>
                             <td style={{...TDR,color:T.green,fontWeight:600}}>{brl(u.rev)}</td>
                             <td style={{...TD,fontSize:11,color:tel?T.green:T.text3}}>{tel||"⚠️ sem tel"}</td>
-                            <td style={TDR}>{tel?(<button onClick={()=>enviarUm(u.user,u.localFreqKey,sec.msgId,template,cupom)} disabled={sending[sendKey]} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:sending[sendKey]?"not-allowed":"pointer",background:sending[sendKey]?"rgba(255,255,255,0.05)":`${sec.color}20`,border:`1px solid ${sending[sendKey]?T.border:sec.color+"50"}`,color:sending[sendKey]?T.text3:sec.color,transition:"all 0.2s"}}>{sending[sendKey]?"⏳":"📤"}</button>):<span style={{color:T.text3,fontSize:10,fontFamily:T.mono}}>sem tel</span>}</td>
+                            <td style={TDR}>{tel?(<button onClick={()=>abrirPreview(u.user,u.localFreqKey,sec.msgId,template,cupom)} disabled={sending[sendKey]} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:sending[sendKey]?"not-allowed":"pointer",background:sending[sendKey]?"rgba(255,255,255,0.05)":`${sec.color}20`,border:`1px solid ${sending[sendKey]?T.border:sec.color+"50"}`,color:sending[sendKey]?T.text3:sec.color,transition:"all 0.2s"}}>{sending[sendKey]?"⏳":"📤"}</button>):<span style={{color:T.text3,fontSize:10,fontFamily:T.mono}}>sem tel</span>}</td>
                           </tr>);
                         })}
                       </tbody>
