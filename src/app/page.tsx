@@ -1488,11 +1488,102 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
       {/* FILA DO DIA — ALGORITMO INTELIGENTE */}
       {(()=>{
         const limite=appState.limiteDisparoDiario||20;
-        const{fila,semTelefone,novosDetectados}=gerarFilaDia(sessions,appState,limite);
+        const cfgCRM=appState.zapi||{instanceId:"",token:"",clientToken:""};
+        const horarioInicio=appState.metas["crm_inicio"]||9;
+        const horarioFim=appState.metas["crm_fim"]||18;
+        const intervaloMin=appState.metas["crm_intervalo_min"]||15;
+        const intervaloMax=appState.metas["crm_intervalo_max"]||45;
+        const{fila,semTelefone,novosDetectados}=useMemo(()=>gerarFilaDia(sessions,appState,limite),[sessions,appState,limite]);
         const disparadosHoje=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
         const[filaExpanded,setFilaExpanded]=useState(true);
         const[semTelExpanded,setSemTelExpanded]=useState(false);
         const segCores:Record<string,string>={Motorista:T.red,Heavy:T.amber,Shopper:T.green,Parceiro:T.blue,Embaixador:"#8b5cf6"};
+
+        // ── ESTADO DE DISPARO AUTOMÁTICO ──────────────────────────────────────
+        const[autoStatus,setAutoStatus]=useState<"idle"|"running"|"paused"|"done">("idle");
+        const[autoIdx,setAutoIdx]=useState(0);
+        const[autoTotal,setAutoTotal]=useState(0);
+        const[proximoHorario,setProximoHorario]=useState<Date|null>(null);
+        const[autoLog,setAutoLog]=useState<{nome:string;status:"ok"|"err";ts:Date}[]>([]);
+        const autoRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+        const pausedRef=useRef(false);
+
+        // Calcular preview dos horários
+        const calcHorarios=(n:number):{horarios:Date[];durMin:number}=>{
+          const agora=new Date();
+          const inicio=new Date();inicio.setHours(horarioInicio,0,0,0);
+          const fim=new Date();fim.setHours(horarioFim,30,0,0);
+          const base=agora>inicio?agora:inicio;
+          const horarios:Date[]=[];
+          let cursor=new Date(base.getTime());
+          for(let i=0;i<n;i++){
+            horarios.push(new Date(cursor));
+            const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin);
+            cursor=new Date(cursor.getTime()+delay*60000);
+            if(cursor>fim)break;
+          }
+          const durMin=horarios.length>1?Math.round((horarios[horarios.length-1].getTime()-horarios[0].getTime())/60000):0;
+          return{horarios,durMin};
+        };
+
+        const iniciarDisparo=async()=>{
+          if(fila.length===0){alert("Fila vazia.");return;}
+          const{horarios}=calcHorarios(fila.length);
+          if(!confirm(`Disparar para ${fila.length} usuários?\nPrimeira mensagem: agora\nÚltima: ~${horarios[horarios.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}\nIntervalo: ${intervaloMin}–${intervaloMax} min entre cada`))return;
+          setAutoStatus("running");setAutoIdx(0);setAutoTotal(fila.length);setAutoLog([]);pausedRef.current=false;
+          const disparar=async(i:number)=>{
+            if(i>=fila.length){setAutoStatus("done");return;}
+            if(pausedRef.current){setAutoStatus("paused");return;}
+            const u=fila[i];
+            setAutoIdx(i);
+            // Enviar mensagem
+            const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
+            await enviarUm(u.nome,u.hubKey,u.msgId,template,"");
+            setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
+            // Calcular próximo delay
+            const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
+            const proximo=new Date(Date.now()+delay);
+            setProximoHorario(proximo);
+            if(i<fila.length-1){
+              autoRef.current=setTimeout(()=>disparar(i+1),delay);
+            }else{
+              setAutoStatus("done");
+            }
+          };
+          disparar(0);
+        };
+
+        const pausarDisparo=()=>{
+          pausedRef.current=true;
+          if(autoRef.current)clearTimeout(autoRef.current);
+          setAutoStatus("paused");
+        };
+
+        const retomar=()=>{
+          pausedRef.current=false;
+          setAutoStatus("running");
+          const i=autoIdx+1;
+          const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
+          autoRef.current=setTimeout(()=>{
+            const disparar=async(idx:number)=>{
+              if(idx>=fila.length){setAutoStatus("done");return;}
+              if(pausedRef.current){setAutoStatus("paused");return;}
+              const u=fila[idx];setAutoIdx(idx);
+              const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
+              await enviarUm(u.nome,u.hubKey,u.msgId,template,"");
+              setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
+              const d=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
+              setProximoHorario(new Date(Date.now()+d));
+              if(idx<fila.length-1)autoRef.current=setTimeout(()=>disparar(idx+1),d);
+              else setAutoStatus("done");
+            };
+            disparar(i);
+          },delay);
+        };
+
+        const pct=autoTotal>0?Math.round((autoIdx/autoTotal)*100):0;
+        const{horarios:horariosPreview}=fila.length>0?calcHorarios(fila.length):{horarios:[]};
+
         return(
           <div style={{marginBottom:20}}>
             {/* Header Fila do Dia */}
@@ -1502,21 +1593,54 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
                   <span style={{fontSize:18}}>🎯</span>
                   <div>
                     <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Fila do Dia — Algoritmo Inteligente</div>
-                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{fila.length} prontos · {disparadosHoje}/{limite} disparados hoje · {semTelefone.length} sem tel</div>
+                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{fila.length} prontos · {disparadosHoje}/{limite} hoje · {semTelefone.length} sem tel · {intervaloMin}–{intervaloMax} min intervalo</div>
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  {novosDetectados.length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {novosDetectados.length} novos detectados</span>}
+                  {novosDetectados.length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {novosDetectados.length} novos</span>}
                   <span style={{fontFamily:T.mono,fontSize:11,padding:"2px 9px",borderRadius:20,background:"rgba(0,229,160,0.15)",color:T.green,border:"1px solid rgba(0,229,160,0.3)"}}>{fila.length}</span>
                   <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{filaExpanded?"▲":"▼"}</span>
                 </div>
               </div>
+
+              {/* BARRA DE PROGRESSO DISPARO */}
+              {autoStatus!=="idle"&&(
+                <div style={{padding:"12px 16px",borderTop:"1px solid rgba(0,229,160,0.2)",background:"rgba(0,229,160,0.04)"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:6}}>
+                    <div style={{fontFamily:T.mono,fontSize:11,color:T.green}}>
+                      {autoStatus==="running"?"⚡ Disparando...":autoStatus==="paused"?"⏸️ Pausado":autoStatus==="done"?"✅ Concluído":""}
+                      {" "}<span style={{color:T.text2}}>{autoIdx}/{autoTotal} enviados</span>
+                    </div>
+                    {autoStatus==="running"&&proximoHorario&&(
+                      <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>próxima: {proximoHorario.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>
+                    )}
+                    <div style={{display:"flex",gap:8}}>
+                      {autoStatus==="running"&&<button onClick={pausarDisparo} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.3)",color:T.amber}}>⏸️ Pausar</button>}
+                      {autoStatus==="paused"&&<button onClick={retomar} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green}}>▶️ Retomar</button>}
+                      {(autoStatus==="paused"||autoStatus==="done")&&<button onClick={()=>{setAutoStatus("idle");setAutoIdx(0);setAutoLog([]);}} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3}}>↩ Reset</button>}
+                    </div>
+                  </div>
+                  <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${pct}%`,background:autoStatus==="done"?T.green:T.green,borderRadius:3,transition:"width 0.5s"}}/>
+                  </div>
+                  {autoLog.length>0&&(
+                    <div style={{marginTop:8,maxHeight:80,overflowY:"auto"}}>
+                      {autoLog.slice(0,5).map((l,i)=>(
+                        <div key={i} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"2px 0"}}>
+                          {l.status==="ok"?"✅":"❌"} {trunc(l.nome,20)} · {l.ts.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {filaExpanded&&(
                 <div style={{borderTop:`1px solid rgba(0,229,160,0.2)`}}>
                   {novosDetectados.length>0&&(
                     <div style={{padding:"10px 16px",background:"rgba(245,158,11,0.06)",borderBottom:"1px solid rgba(245,158,11,0.2)",fontFamily:T.mono,fontSize:11,color:T.amber}}>
-                      ⚠️ Novos usuários detectados nas transações sem cadastro na base mestre: <strong>{novosDetectados.slice(0,5).join(", ")}{novosDetectados.length>5?` +${novosDetectados.length-5}`:""}</strong>
-                      <br/><span style={{fontSize:10,color:T.text3}}>→ Exporte o CSV de usuários da Spott e importe em Config → Contatos → Base Mestre</span>
+                      ⚠️ Novos usuários sem cadastro: <strong>{novosDetectados.slice(0,5).join(", ")}{novosDetectados.length>5?` +${novosDetectados.length-5}`:""}</strong>
+                      <br/><span style={{fontSize:10,color:T.text3}}>→ Exporte CSV de usuários da Spott e importe em Config → Contatos → Base Mestre</span>
                     </div>
                   )}
                   {fila.length===0?(
@@ -1524,46 +1648,71 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
                       {disparadosHoje>=limite?"✅ Limite diário atingido":"✅ Fila vazia — todos contactados recentemente"}
                     </div>
                   ):(
-                    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?400:undefined}}>
-                        <thead><tr style={{background:T.bg3}}>
-                          <th style={TH}>Usuário</th>
-                          <th style={TH}>Segmento</th>
-                          <th style={TH}>Estação</th>
-                          <th style={{...THR}}>Dias</th>
-                          <th style={TH}>Fonte</th>
-                          <th style={THR}></th>
-                        </tr></thead>
-                        <tbody>
-                          {fila.map(u=>{
-                            const cor=segCores[u.segmento]||T.text2;
-                            const tipoEmoji=u.hubTipoStr==="propria"?"🏠":u.hubTipoStr==="parceria"?"🤝":"📋";
-                            const sendKey=`${u.nome}_${u.msgId}_fila`;
-                            const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
-                            return(
-                              <tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
-                                <td style={TD}>
-                                  <div style={{fontWeight:500,fontSize:12}}>{trunc(u.nome,isMobile?14:22)}</div>
-                                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.sessoes}x · R${u.valor.toFixed(0)}</div>
-                                </td>
-                                <td style={TD}>
-                                  <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}18`,color:cor,border:`1px solid ${cor}30`}}>{u.segmento}</span>
-                                  {u.fonteSegmento!=="csv"&&<span style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginLeft:4}}>✓dec</span>}
-                                </td>
-                                <td style={TD}>
-                                  <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{tipoEmoji} {trunc(u.hubNomeStr,isMobile?10:16)}</span>
-                                </td>
-                                <td style={{...TDR,color:u.diasSemRecarga>21?T.red:u.diasSemRecarga>10?T.amber:T.text2,fontSize:11}}>{u.diasSemRecarga}d</td>
-                                <td style={{...TD,fontSize:10,color:T.text3}}>{u.fonteSegmento}</td>
-                                <td style={TDR}>
-                                  <button onClick={()=>abrirPreview(u.nome,u.hubKey,u.msgId,template,"")} disabled={sending[sendKey]} style={{padding:"5px 10px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:sending[sendKey]?"rgba(255,255,255,0.05)":"rgba(0,229,160,0.15)",border:`1px solid ${sending[sendKey]?T.border:"rgba(0,229,160,0.3)"}`,color:sending[sendKey]?T.text3:T.green}}>{sending[sendKey]?"⏳":"📤"}</button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <>
+                      {/* BOTÃO INICIAR + PREVIEW */}
+                      {autoStatus==="idle"&&(
+                        <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(0,229,160,0.15)`,background:"rgba(0,229,160,0.03)"}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>
+                              {fila.length} mensagens · {horarioInicio}h–{horarioFim}h · intervalo {intervaloMin}–{intervaloMax} min
+                              {horariosPreview.length>0&&<span style={{color:T.text3}}> · última ~{horariosPreview[horariosPreview.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>}
+                            </div>
+                            <button
+                              onClick={iniciarDisparo}
+                              style={{padding:"8px 20px",borderRadius:10,fontFamily:T.sans,fontSize:13,fontWeight:700,cursor:"pointer",background:T.green,color:T.bg,border:"none"}}
+                            >
+                              🚀 Iniciar Fila do Dia
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                        <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?400:undefined}}>
+                          <thead><tr style={{background:T.bg3}}>
+                            <th style={TH}>Usuário</th>
+                            <th style={TH}>Segmento</th>
+                            <th style={TH}>Estação</th>
+                            <th style={{...THR}}>Dias</th>
+                            <th style={TH}>Fonte</th>
+                            <th style={THR}></th>
+                          </tr></thead>
+                          <tbody>
+                            {fila.map((u,idx)=>{
+                              const cor=segCores[u.segmento]||T.text2;
+                              const tipoEmoji=u.hubTipoStr==="propria"?"🏠":u.hubTipoStr==="parceria"?"🤝":"📋";
+                              const sendKey=`${u.nome}_${u.msgId}_fila`;
+                              const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
+                              const isEnviado=autoLog.some(l=>l.nome===u.nome);
+                              const isAtual=autoStatus==="running"&&autoIdx===idx;
+                              return(
+                                <tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",background:isAtual?"rgba(0,229,160,0.06)":isEnviado?"rgba(255,255,255,0.02)":"",opacity:isEnviado?0.5:1}}>
+                                  <td style={TD}>
+                                    <div style={{fontWeight:500,fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                                      {isEnviado&&<span style={{color:T.green,fontSize:10}}>✅</span>}
+                                      {isAtual&&<span style={{fontSize:10}}>⚡</span>}
+                                      {trunc(u.nome,isMobile?14:22)}
+                                    </div>
+                                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.sessoes}x · R${u.valor.toFixed(0)}</div>
+                                  </td>
+                                  <td style={TD}>
+                                    <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}18`,color:cor,border:`1px solid ${cor}30`}}>{u.segmento}</span>
+                                    {u.fonteSegmento!=="csv"&&<span style={{fontFamily:T.mono,fontSize:9,color:T.green,marginLeft:4}}>✓</span>}
+                                  </td>
+                                  <td style={TD}>
+                                    <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{tipoEmoji} {trunc(u.hubNomeStr,isMobile?10:16)}</span>
+                                  </td>
+                                  <td style={{...TDR,color:u.diasSemRecarga>21?T.red:u.diasSemRecarga>10?T.amber:T.text2,fontSize:11}}>{u.diasSemRecarga}d</td>
+                                  <td style={{...TD,fontSize:10,color:T.text3}}>{u.fonteSegmento}</td>
+                                  <td style={TDR}>
+                                    <button onClick={()=>abrirPreview(u.nome,u.hubKey,u.msgId,template,"")} disabled={sending[sendKey]||isEnviado} style={{padding:"5px 10px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:isEnviado?"default":"pointer",background:isEnviado?"rgba(255,255,255,0.03)":sending[sendKey]?"rgba(255,255,255,0.05)":"rgba(0,229,160,0.15)",border:`1px solid ${isEnviado?T.border:sending[sendKey]?T.border:"rgba(0,229,160,0.3)"}`,color:isEnviado?T.text3:sending[sendKey]?T.text3:T.green}}>{isEnviado?"✓":sending[sendKey]?"⏳":"📤"}</button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -1994,11 +2143,30 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
           {zapiTestResult&&(<div style={{fontFamily:T.mono,fontSize:12,color:zapiTestResult.startsWith("✅")?T.green:zapiTestResult.startsWith("⚠️")?T.amber:T.red,padding:"10px 12px",background:"rgba(255,255,255,0.04)",borderRadius:8,marginBottom:14}}>{zapiTestResult}</div>)}
           <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:"10px 12px",fontFamily:T.mono,fontSize:11,color:"#93c5fd"}}>ℹ️ Configure também as variáveis de ambiente no Vercel para maior segurança.</div>
           <div style={{marginTop:14,padding:"14px 16px",background:T.bg3,borderRadius:10,border:`1px solid ${T.border}`}}>
-            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:8}}>📊 Limite de disparos por dia</div>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <input type="number" min={1} max={100} value={limiteDisp} onChange={e=>setLimiteDisp(+e.target.value||20)} style={{width:80,background:T.bg2,border:`1px solid ${T.border}`,color:T.text,padding:"7px 10px",borderRadius:8,fontSize:14,fontFamily:T.mono,textAlign:"center"}}/>
-              <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>mensagens/dia · recomendado: 20</span>
-              <button onClick={()=>onSave({limiteDisparoDiario:limiteDisp})} style={{background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green,padding:"7px 14px",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:T.mono,marginLeft:"auto"}}>💾 Salvar</button>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:10}}>📊 Configurações de Disparo Automático</div>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:8,marginBottom:10}}>
+              {[
+                {label:"Limite/dia",key:"limiteDisparoDiario",val:limiteDisp,set:setLimiteDisp,min:1,max:100},
+                {label:"Início (h)",key:"crm_inicio",val:appState.metas["crm_inicio"]||9,set:(v:number)=>onSave({metas:{...appState.metas,crm_inicio:v}}),min:6,max:12},
+                {label:"Fim (h)",key:"crm_fim",val:appState.metas["crm_fim"]||18,set:(v:number)=>onSave({metas:{...appState.metas,crm_fim:v}}),min:14,max:22},
+                {label:"Intervalo mín (min)",key:"crm_intervalo_min",val:appState.metas["crm_intervalo_min"]||15,set:(v:number)=>onSave({metas:{...appState.metas,crm_intervalo_min:v}}),min:5,max:60},
+                {label:"Intervalo máx (min)",key:"crm_intervalo_max",val:appState.metas["crm_intervalo_max"]||45,set:(v:number)=>onSave({metas:{...appState.metas,crm_intervalo_max:v}}),min:10,max:120},
+              ].map(f=>(
+                <div key={f.key}>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:4}}>{f.label}</div>
+                  <input type="number" min={f.min} max={f.max} value={f.val}
+                    onChange={e=>{
+                      const v=+e.target.value||f.min;
+                      if(f.key==="limiteDisparoDiario"){setLimiteDisp(v);onSave({limiteDisparoDiario:v});}
+                      else f.set(v);
+                    }}
+                    style={{width:"100%",background:T.bg2,border:`1px solid ${T.border}`,color:T.text,padding:"7px 8px",borderRadius:8,fontSize:13,fontFamily:T.mono,textAlign:"center" as const,boxSizing:"border-box" as const}}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>
+              ⚡ Exemplo: 20 msgs · 09h–18h · 15–45 min = última mensagem ~{Math.round((20*30)/60)}h após início
             </div>
           </div>
         </Panel>
