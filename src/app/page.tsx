@@ -1537,8 +1537,22 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
             const u=fila[i];
             setAutoIdx(i);
             // Enviar mensagem
-            const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
-            await enviarUm(u.nome,u.hubKey,u.msgId,template,"");
+            const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
+                              if(msgId==="msg2a"){
+                                if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
+                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+                                return getMsgTemplate("msg2a_parkway"); // proprias e demais
+                              }
+                              if(msgId==="msg2b"){
+                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+                                if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
+                                return getMsgTemplate("msg2b_parkway");
+                              }
+                              return getMsgTemplate("msg1");
+                            };
+                            const template=getMsgPorEstacao(u.msgId,u.hubKey);
+            const cupomFila=u.msgId==="msg2a"?(u.hubKey==="cidadeauto"?getMsgTemplate("cupom_cidadeauto"):u.hubKey==="costa"?getMsgTemplate("cupom_costa"):getMsgTemplate("cupom_parkway")):u.msgId==="msg_vip"?getMsgTemplate("cupom_vip"):"";
+            await enviarUm(u.nome,u.hubKey,u.msgId,template,cupomFila);
             setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
             // Calcular próximo delay
             const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
@@ -1569,7 +1583,20 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
               if(idx>=fila.length){setAutoStatus("done");return;}
               if(pausedRef.current){setAutoStatus("paused");return;}
               const u=fila[idx];setAutoIdx(idx);
-              const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
+              const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
+                              if(msgId==="msg2a"){
+                                if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
+                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+                                return getMsgTemplate("msg2a_parkway"); // proprias e demais
+                              }
+                              if(msgId==="msg2b"){
+                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+                                if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
+                                return getMsgTemplate("msg2b_parkway");
+                              }
+                              return getMsgTemplate("msg1");
+                            };
+                            const template=getMsgPorEstacao(u.msgId,u.hubKey);
               await enviarUm(u.nome,u.hubKey,u.msgId,template,"");
               setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
               const d=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
@@ -1681,7 +1708,20 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
                               const cor=segCores[u.segmento]||T.text2;
                               const tipoEmoji=u.hubTipoStr==="propria"?"🏠":u.hubTipoStr==="parceria"?"🤝":"📋";
                               const sendKey=`${u.nome}_${u.msgId}_fila`;
-                              const template=getMsgTemplate(u.msgId==="msg2a"?"msg2a_parkway":u.msgId==="msg2b"?"msg2b_parkway":"msg1");
+                              const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
+                              if(msgId==="msg2a"){
+                                if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
+                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+                                return getMsgTemplate("msg2a_parkway"); // proprias e demais
+                              }
+                              if(msgId==="msg2b"){
+                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+                                if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
+                                return getMsgTemplate("msg2b_parkway");
+                              }
+                              return getMsgTemplate("msg1");
+                            };
+                            const template=getMsgPorEstacao(u.msgId,u.hubKey);
                               const isEnviado=autoLog.some(l=>l.nome===u.nome);
                               const isAtual=autoStatus==="running"&&autoIdx===idx;
                               return(
