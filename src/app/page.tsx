@@ -3619,6 +3619,7 @@ export default function Home() {
   const isMobile = useIsMobile();
   const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [demoLoading, setDemoLoading] = useState(DEMO_MODE);
   const [appState, setAppState] = useState<AppState>(loadState);
   const [tab, setTab] = useState<Tab>("dash");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -3666,11 +3667,12 @@ export default function Home() {
           };
         });
         setSessions(parsed);
+        setDemoLoading(false);
       })
-      .catch(e=>console.error("Demo data error:",e));
+      .catch(e=>{console.error("Demo data error:",e);setDemoLoading(false);});
   },[DEMO_MODE]);
 
-  if (!sessions.length && !DEMO_MODE) {
+  if (!sessions.length && !DEMO_MODE && !demoLoading) {
     return (
       <div style={{ background: T.bg, minHeight: "100vh", color: T.text }}>
         <style>{`
