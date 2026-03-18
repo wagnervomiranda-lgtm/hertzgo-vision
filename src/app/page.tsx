@@ -3436,7 +3436,7 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
               lat:(e.AddressInfo as Record<string,unknown>)?.Latitude as number||0,
               lng:(e.AddressInfo as Record<string,unknown>)?.Longitude as number||0,
               rede:((e.OperatorInfo as Record<string,unknown>)?.Title as string)||"Desconhecida",
-              tipo:((e.Connections as Record<string,unknown>[])?.[0] as Record<string,unknown>)?.ConnectionType?.Title as string||"AC",
+              tipo:(((e.Connections as Record<string,unknown>[])?.[0] as Record<string,unknown>)?.ConnectionType as Record<string,unknown>)?.Title as string||"AC",
             }));
             onSave({mercado:{...appState.mercado,estacoesOCM:estacoes,ocmAtualizadoEm:new Date().toISOString()}});
             setBuscandoOCM(false);
