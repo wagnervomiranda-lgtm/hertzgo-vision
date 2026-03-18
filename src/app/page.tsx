@@ -808,6 +808,280 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
   );
 }
 
+// ─── BRIEFING DIÁRIO ─────────────────────────────────────────────────────────
+function BriefingDiario({sessions,appState,meta,isMobile,ok,maxDay,maxTs,mesAtual,anoAtual,maxData}:{
+  sessions:Session[];appState:AppState;meta:number;isMobile:boolean;
+  ok:Session[];maxDay:Date;maxTs:number;mesAtual:number;anoAtual:number;maxData:Date;
+}){
+  const hoje=Date.now();
+  const mesAnteriorDate=new Date(anoAtual,mesAtual-1,1);
+
+  const ontemOk=ok.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime();});
+  const mesAtualOk=ok.filter(s=>s.date.getMonth()===mesAtual&&s.date.getFullYear()===anoAtual);
+
+  const revOntem=ontemOk.reduce((a,s)=>a+s.value,0);
+  const kwhOntem=ontemOk.reduce((a,s)=>a+s.energy,0);
+  const sessOntem=ontemOk.length;
+  const revMes=mesAtualOk.reduce((a,s)=>a+s.value,0);
+  const kwhMes=mesAtualOk.reduce((a,s)=>a+s.energy,0);
+  const sessMes=mesAtualOk.length;
+  const diasMes=new Set(mesAtualOk.map(s=>s.date.toDateString())).size||1;
+  const avgRevDia=revMes/diasMes;
+  const projMes=avgRevDia*30;
+
+  const overstayOntem=ontemOk.filter(s=>s.overstayMin&&s.overstayMin>15);
+  const cancelOntem=sessions.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime()&&s.cancelled;});
+  const totalOntem=ontemOk.length+cancelOntem.length;
+  const cancelRate=totalOntem>0?cancelOntem.length/totalOntem:0;
+  const avgCancelRate=sessions.length>0?sessions.filter(s=>s.cancelled).length/sessions.length:0;
+  const cancelAlerta=cancelRate>avgCancelRate*1.5&&cancelOntem.length>=3;
+
+  const hubs2=Array.from(new Set(ok.map(s=>s.hubKey)));
+  const saudeEstacoes=hubs2.map(h=>{
+    const hSess=ok.filter(s=>s.hubKey===h);
+    const daysH=new Set(hSess.map(s=>s.date.toDateString())).size||1;
+    const avgRevH=hSess.reduce((a,s)=>a+s.value,0)/daysH;
+    const hOntem=ontemOk.filter(s=>s.hubKey===h);
+    const revOntemH=hOntem.reduce((a,s)=>a+s.value,0);
+    const semMovimento=hOntem.length===0;
+    const abaixoMedia=hOntem.length>0&&revOntemH<avgRevH*0.6;
+    const ovH=hOntem.filter(s=>s.overstayMin&&s.overstayMin>15);
+    const avgSess=hSess.length/daysH;
+    let status:"ok"|"warn"|"crit"="ok";
+    if(semMovimento||abaixoMedia)status="warn";
+    if(semMovimento&&avgSess>=5)status="crit";
+    return{hub:h,status,semMovimento,abaixoMedia,overstay:ovH.length,sessOntem:hOntem.length,revOntem:revOntemH,avgRevDia:avgRevH};
+  });
+
+  const users2=classificarUsuarios(ok);
+  const vipScores2:Record<string,ReturnType<typeof calcVipScore>>={};
+  users2.filter(u=>u.isMotorista).forEach(u=>{vipScores2[u.user]=calcVipScore(u.user,ok);});
+  const motoristasRisco=users2.filter(u=>u.isMotorista&&["em_risco","churned"].includes(vipScores2[u.user]?.status||""));
+  const novosHoje=users2.filter(u=>{
+    const primeiraRecarga=Math.min(...ok.filter(s=>s.user===u.user).map(s=>s.date.getTime()));
+    return(maxTs-primeiraRecarga)<7*86400000;
+  });
+
+  const acoes:{icon:string;texto:string;tipo:"crm"|"op"|"info";cor:string}[]=[];
+  const baseMestreKeys=Object.keys(appState.baseMestre||{});
+  if(baseMestreKeys.length>0){
+    const ultimaImport=Object.values(appState.baseMestre)[0]?.importadoEm;
+    if(ultimaImport){
+      const diasBase=Math.round((hoje-new Date(ultimaImport).getTime())/86400000);
+      if(diasBase>30)acoes.push({icon:"📋",texto:`Base Mestre desatualizada (${diasBase} dias) — exportar CSV de usuários da Spott`,tipo:"op",cor:T.amber});
+    }
+  }else{
+    acoes.push({icon:"📋",texto:"Base Mestre vazia — importar CSV de usuários da Spott em Config → Contatos",tipo:"op",cor:T.amber});
+  }
+  const nomesTransacoes=Array.from(new Set(ok.map(s=>s.user)));
+  const semCadastro=nomesTransacoes.filter(n=>!appState.baseMestre[n.toLowerCase()]);
+  if(semCadastro.length>0)acoes.push({icon:"👤",texto:`${semCadastro.length} usuários nas transações sem cadastro — atualizar Base Mestre`,tipo:"info",cor:T.text2});
+  if(motoristasRisco.length>0)acoes.push({icon:"🔴",texto:`${motoristasRisco.length} motoristas em risco — disparar MSG Risco`,tipo:"crm",cor:T.red});
+  if(novosHoje.length>0)acoes.push({icon:"🌱",texto:`${novosHoje.length} novos usuários esta semana — enviar boas-vindas`,tipo:"crm",cor:T.teal});
+  overstayOntem.forEach(s=>acoes.push({icon:"⏱️",texto:`Overstay: ${s.user} em ${hubNome(s.hubKey)} (${s.overstayMin}min)`,tipo:"op",cor:T.amber}));
+  if(cancelAlerta)acoes.push({icon:"⚠️",texto:`Cancelamentos acima da média ontem: ${(cancelRate*100).toFixed(0)}% (média ${(avgCancelRate*100).toFixed(0)}%)`,tipo:"op",cor:T.amber});
+  saudeEstacoes.filter(e=>e.semMovimento).forEach(e=>acoes.push({icon:"🔌",texto:`${hubNome(e.hub)} sem sessões ontem — verificar carregador`,tipo:"op",cor:T.red}));
+  saudeEstacoes.filter(e=>e.abaixoMedia&&!e.semMovimento).forEach(e=>acoes.push({icon:"📉",texto:`${hubNome(e.hub)} abaixo da média (${brl(e.revOntem)} vs ${brl(e.avgRevDia)}/dia)`,tipo:"info",cor:T.text2}));
+
+  const[briefingOpen,setBriefingOpen]=useState(true);
+  const[acoesResolvidas,setAcoesResolvidas]=useState<number[]>([]);
+  const resolverAcao=(i:number)=>setAcoesResolvidas(prev=>[...prev,i]);
+  const acoesAtivas=acoes.filter((_,i)=>!acoesResolvidas.includes(i));
+
+  const dataOntem=maxDay.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+  const mesNome=maxDay.toLocaleDateString("pt-BR",{month:"long"});
+  const crits=saudeEstacoes.filter(e=>e.status==="crit").length;
+  const warns=saudeEstacoes.filter(e=>e.status==="warn").length;
+  const briefingCor=crits>0?T.red:warns>0||acoesAtivas.filter(a=>a.tipo==="op").length>0?T.amber:T.green;
+  const briefingEmoji=crits>0?"🔴":warns>0?"🟡":"🟢";
+
+  return(
+    <div style={{marginBottom:16,background:`${briefingCor}06`,border:`1px solid ${briefingCor}30`,borderRadius:16,overflow:"hidden"}}>
+      <div onClick={()=>setBriefingOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>{briefingEmoji}</span>
+          <div>
+            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:briefingCor}}>Briefing do Dia — {dataOntem}</div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{acoesAtivas.length} ações · {saudeEstacoes.filter(e=>e.status==="ok").length}/{saudeEstacoes.length} estações ok · {mesNome}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {acoesAtivas.filter(a=>a.tipo==="op").length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {acoesAtivas.filter(a=>a.tipo==="op").length}</span>}
+          {acoesAtivas.filter(a=>a.tipo==="crm").length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(239,68,68,0.2)",color:T.red,border:"1px solid rgba(239,68,68,0.3)"}}>📤 {acoesAtivas.filter(a=>a.tipo==="crm").length}</span>}
+          <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{briefingOpen?"▲":"▼"}</span>
+        </div>
+      </div>
+      {briefingOpen&&(
+        <div style={{borderTop:`1px solid ${briefingCor}20`}}>
+          {/* SAÚDE */}
+          <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Saúde das Estações</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {saudeEstacoes.map(e=>{
+                const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
+                const emoji=e.status==="crit"?"🔴":e.status==="warn"?"🟡":"🟢";
+                return(
+                  <div key={e.hub} style={{background:`${cor}08`,border:`1px solid ${cor}30`,borderRadius:10,padding:"8px 12px",minWidth:120}}>
+                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
+                      <span style={{fontSize:12}}>{emoji}</span>
+                      <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:cor}}>{trunc(hubNome(e.hub),12)}</span>
+                    </div>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2}}>{e.semMovimento?"sem sessões":e.sessOntem+" sess · "+brl(e.revOntem)}</div>
+                    {e.overstay>0&&<div style={{fontFamily:T.mono,fontSize:9,color:T.amber,marginTop:2}}>⏱️ {e.overstay} overstay</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* KPIS */}
+          <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8}}>
+              {[
+                {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
+                {label:"Energia",ontem:`${kwhOntem.toFixed(0)} kWh`,mes:`${kwhMes.toFixed(0)} kWh`,sub:`${(kwhMes/diasMes).toFixed(0)}/dia`,cor:T.amber},
+                {label:"Sessões",ontem:`${sessOntem}`,mes:`${sessMes}`,sub:`${(sessMes/diasMes).toFixed(1)}/dia`,cor:T.blue},
+                {label:"Ticket",ontem:sessOntem>0?brl(revOntem/sessOntem):"—",mes:sessMes>0?brl(revMes/sessMes):"—",sub:`R$${kwhMes>0?(revMes/kwhMes).toFixed(2):"-"}/kWh`,cor:T.purple},
+              ].map((k,i)=>(
+                <div key={i} style={{background:T.bg2,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`}}>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                    <div><div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>Ontem</div><div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:k.cor}}>{k.ontem}</div></div>
+                    <div><div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>{mesNome.slice(0,3)}</div><div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text2}}>{k.mes}</div></div>
+                  </div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* FATURAMENTO POR ESTAÇÃO */}
+          <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Faturamento por Estação</div>
+            <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?480:undefined}}>
+                <thead><tr><th style={TH}>Estação</th><th style={THR}>Ontem</th><th style={THR}>{mesNome.slice(0,3)}</th><th style={THR}>Proj.</th><th style={THR}>R$/kWh</th><th style={TH}>Status</th></tr></thead>
+                <tbody>
+                  {saudeEstacoes.sort((a,b)=>{
+                    const rA=mesAtualOk.filter(s=>s.hubKey===a.hub).reduce((x,s)=>x+s.value,0);
+                    const rB=mesAtualOk.filter(s=>s.hubKey===b.hub).reduce((x,s)=>x+s.value,0);
+                    return rB-rA;
+                  }).map(e=>{
+                    const hMes=mesAtualOk.filter(s=>s.hubKey===e.hub);
+                    const revHMes=hMes.reduce((a,s)=>a+s.value,0);
+                    const kwhHMes=hMes.reduce((a,s)=>a+s.energy,0);
+                    const diasHMes=new Set(hMes.map(s=>s.date.toDateString())).size||1;
+                    const projH=revHMes/diasHMes*30;
+                    const precoH=kwhHMes>0?revHMes/kwhHMes:0;
+                    const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
+                    return(
+                      <tr key={e.hub} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                        <td style={TD}><span style={{fontWeight:600,fontSize:12}}>{hubNome(e.hub)}</span></td>
+                        <td style={{...TDR,color:e.revOntem>0?T.green:T.text3}}>{e.revOntem>0?brl(e.revOntem):"—"}</td>
+                        <td style={{...TDR,color:T.text}}>{brl(revHMes)}</td>
+                        <td style={{...TDR,color:T.amber}}>{brl(projH)}</td>
+                        <td style={{...TDR,color:T.text2,fontSize:11}}>R${precoH.toFixed(2)}</td>
+                        <td style={TD}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{e.status==="crit"?"🔴 crítico":e.status==="warn"?"🟡 atenção":"🟢 ok"}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* USUÁRIOS */}
+          {(motoristasRisco.length>0||novosHoje.length>0)&&(
+            <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+              <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Usuários em Atenção</div>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
+                {motoristasRisco.length>0&&(
+                  <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 12px"}}>
+                    <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.red,marginBottom:6}}>🔴 Motoristas em Risco ({motoristasRisco.length})</div>
+                    {motoristasRisco.slice(0,3).map(u=>(<div key={u.user} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>{trunc(u.user,20)} · {vipScores2[u.user]?.diasSemRecarga}d</div>))}
+                    {motoristasRisco.length>3&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{motoristasRisco.length-3} outros</div>}
+                  </div>
+                )}
+                {novosHoje.length>0&&(
+                  <div style={{background:"rgba(1,96,112,0.06)",border:"1px solid rgba(1,96,112,0.2)",borderRadius:10,padding:"10px 12px"}}>
+                    <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.teal,marginBottom:6}}>🌱 Novos esta semana ({novosHoje.length})</div>
+                    {novosHoje.slice(0,3).map(u=>(<div key={u.user} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>{trunc(u.user,20)} · {hubNome(u.localFreqKey)}</div>))}
+                    {novosHoje.length>3&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{novosHoje.length-3} outros</div>}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* AÇÕES */}
+          {acoesAtivas.length>0?(
+            <div style={{padding:"12px 16px"}}>
+              <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Ações de Hoje</div>
+              <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
+                {acoesAtivas.map((a,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg2,borderRadius:8,border:`1px solid ${a.cor}20`,gap:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
+                      <span style={{fontSize:14,flexShrink:0}}>{a.icon}</span>
+                      <span style={{fontFamily:T.mono,fontSize:11,color:a.tipo==="op"?T.amber:a.tipo==="crm"?T.red:T.text2,lineHeight:1.4}}>{a.texto}</span>
+                    </div>
+                    <button onClick={()=>resolverAcao(acoes.indexOf(a))} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3,flexShrink:0,whiteSpace:"nowrap" as const}}>✓ Ok</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ):(
+            <div style={{padding:"14px 16px",textAlign:"center" as const,fontFamily:T.mono,fontSize:11,color:T.green}}>✅ Nenhuma ação pendente — operação normalizada</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PARCEIROS CARD ──────────────────────────────────────────────────────────
+function ParceirosCard({ok,isMobile}:{ok:Session[];isMobile:boolean}){
+  const allParceiros=classificarUsuarios(ok).filter(u=>u.isParceiro);
+  const[parcOpen,setParcOpen]=useState(false);
+  if(allParceiros.length===0)return null;
+  const volTotal=allParceiros.reduce((a,u)=>{
+    return a+ok.filter(s=>s.user===u.user).reduce((b,s)=>b+s.energy,0);
+  },0);
+  return(
+    <div style={{marginBottom:24,background:T.bg2,border:"1px solid rgba(59,130,246,0.25)",borderRadius:14,overflow:"hidden"}}>
+      <div onClick={()=>setParcOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16}}>🔵</span>
+          <div>
+            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#60a5fa"}}>Parceiros & Embaixadores</div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{allParceiros.length} parceiros · {volTotal.toFixed(0)} kWh total</div>
+          </div>
+        </div>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{parcOpen?"▲":"▼"}</span>
+      </div>
+      {parcOpen&&(
+        <div style={{borderTop:"1px solid rgba(59,130,246,0.15)",overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
+            <thead><tr style={{background:T.bg3}}>
+              <th style={TH}>Parceiro</th><th style={TH}>Estação</th><th style={THR}>kWh</th><th style={THR}>Sessões</th>
+            </tr></thead>
+            <tbody>
+              {allParceiros.map(u=>{
+                const uSess=ok.filter(s=>s.user===u.user);
+                const kwhU=uSess.reduce((a,s)=>a+s.energy,0);
+                return(
+                  <tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                    <td style={TD}><span style={{fontSize:12,fontWeight:500}}>{trunc(u.user,isMobile?14:22)}</span></td>
+                    <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{trunc(hubNome(u.localFreqKey),12)}</span></td>
+                    <td style={{...TDR,color:T.amber,fontSize:11}}>{kwhU.toFixed(0)}</td>
+                    <td style={{...TDR,color:T.text2,fontSize:11}}>{uSess.length}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── TAB DASHBOARD ───────────────────────────────────────────────────────────
 function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void;appState:AppState}){
   const isMobile=useIsMobile();
@@ -871,320 +1145,9 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         {hasMove&&<span style={{background:"rgba(59,130,246,0.1)",color:"#60a5fa",padding:"2px 7px",borderRadius:4,fontSize:9,border:"1px solid rgba(59,130,246,0.2)"}}>Move</span>}
       </div>
       {/* ── BRIEFING DIÁRIO ─────────────────────────────────────────── */}
-      {(()=>{
-        const allOk=sessions.filter(s=>!s.cancelled&&s.energy>0);
-        const hoje=Date.now();
+      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} ok={ok} maxDay={maxDay} maxTs={maxTs} mesAtual={mesAtual} anoAtual={anoAtual} maxData={maxDate} />
 
-        // Último dia do CSV
-        const allDates=allOk.map(s=>s.date.getTime());
-        const maxTs=allDates.length?Math.max(...allDates):hoje;
-        const maxDay=new Date(maxTs);maxDay.setHours(0,0,0,0);
-        const ontemOk=allOk.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime();});
-
-        // Mês atual
-        const mesAtualOk=allOk.filter(s=>s.date.getMonth()===maxDay.getMonth()&&s.date.getFullYear()===maxDay.getFullYear());
-
-        // KPIs ontem
-        const revOntem=ontemOk.reduce((a,s)=>a+s.value,0);
-        const kwhOntem=ontemOk.reduce((a,s)=>a+s.energy,0);
-        const sessOntem=ontemOk.length;
-
-        // KPIs mês
-        const revMes=mesAtualOk.reduce((a,s)=>a+s.value,0);
-        const kwhMes=mesAtualOk.reduce((a,s)=>a+s.energy,0);
-        const sessMes=mesAtualOk.length;
-        const diasMes=new Set(mesAtualOk.map(s=>s.date.toDateString())).size||1;
-        const avgRevDia=revMes/diasMes;
-        const diasNoMes=30;
-        const projMes=avgRevDia*diasNoMes;
-
-        // Overstay ontem
-        const overstayOntem=ontemOk.filter(s=>s.overstayMin&&s.overstayMin>15); // alerta acima de 15min (início da cobrança)
-
-        // Cancelamentos ontem
-        const cancelOntem=sessions.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime()&&s.cancelled;});
-        const totalOntem=ontemOk.length+cancelOntem.length;
-        const cancelRate=totalOntem>0?cancelOntem.length/totalOntem:0;
-        const avgCancelRate=sessions.length>0?sessions.filter(s=>s.cancelled).length/sessions.length:0;
-        const cancelAlerta=cancelRate>avgCancelRate*1.5&&cancelOntem.length>=3;
-
-        // Saúde por estação (resumida)
-        const hubs2=Array.from(new Set(allOk.map(s=>s.hubKey)));
-        const saudeEstacoes=hubs2.map(h=>{
-          const hSess=allOk.filter(s=>s.hubKey===h);
-          const daysH=new Set(hSess.map(s=>s.date.toDateString())).size||1;
-          const avgSess=hSess.length/daysH;
-          const hOntem=ontemOk.filter(s=>s.hubKey===h);
-          const temOntem=hOntem.length>0;
-          const revH=hSess.reduce((a,s)=>a+s.value,0);
-          const avgRevH=revH/daysH;
-          const revOntemH=hOntem.reduce((a,s)=>a+s.value,0);
-          const abaixoMedia=temOntem&&revOntemH<avgRevH*0.6;
-          const semMovimento=!temOntem;
-          const ovH=hOntem.filter(s=>s.overstayMin&&s.overstayMin>15);
-          let status:"ok"|"warn"|"crit"="ok";
-          if(semMovimento||abaixoMedia)status="warn";
-          if(semMovimento&&avgSess>=5)status="crit";
-          return{hub:h,status,semMovimento,abaixoMedia,overstay:ovH.length,sessOntem:hOntem.length,revOntem:revOntemH,avgRevDia:avgRevH};
-        });
-
-        // Usuários em atenção
-        const users2=classificarUsuarios(allOk);
-        const vipScores2:Record<string,ReturnType<typeof calcVipScore>>={};
-        users2.filter(u=>u.isMotorista).forEach(u=>{vipScores2[u.user]=calcVipScore(u.user,allOk);});
-        const motoristasRisco=users2.filter(u=>u.isMotorista&&["em_risco","churned"].includes(vipScores2[u.user]?.status||""));
-        const novosHoje=users2.filter(u=>{
-          const primeiraRecarga=Math.min(...allOk.filter(s=>s.user===u.user).map(s=>s.date.getTime()));
-          return(maxTs-primeiraRecarga)<7*86400000;
-        });
-
-        // Ações sugeridas
-        const acoes:{icon:string;texto:string;tipo:"crm"|"op"|"info";cor:string}[]=[];
-        // Base Mestre vencida (>30 dias)
-        const baseMestreKeys=Object.keys(appState.baseMestre||{});
-        if(baseMestreKeys.length>0){
-          const ultimaImport=Object.values(appState.baseMestre)[0]?.importadoEm;
-          if(ultimaImport){
-            const diasBase=Math.round((hoje-new Date(ultimaImport).getTime())/86400000);
-            if(diasBase>30)acoes.push({icon:"📋",texto:`Base Mestre desatualizada (${diasBase} dias) — exportar CSV de usuários da Spott`,tipo:"op",cor:T.amber});
-          }
-        }else{
-          acoes.push({icon:"📋",texto:"Base Mestre vazia — importar CSV de usuários da Spott em Config → Contatos",tipo:"op",cor:T.amber});
-        }
-        // Novos usuários não cadastrados na base mestre
-        const nomesTransacoes=Array.from(new Set(allOk.map(s=>s.user)));
-        const semCadastro=nomesTransacoes.filter(n=>!appState.baseMestre[n.toLowerCase()]);
-        if(semCadastro.length>0)acoes.push({icon:"👤",texto:`${semCadastro.length} usuários nas transações sem cadastro — atualizar Base Mestre`,tipo:"info",cor:T.text2});
-        if(motoristasRisco.length>0)acoes.push({icon:"🔴",texto:`${motoristasRisco.length} motoristas em risco — disparar MSG Risco`,tipo:"crm",cor:T.red});
-        if(novosHoje.length>0)acoes.push({icon:"🌱",texto:`${novosHoje.length} novos usuários esta semana — enviar boas-vindas`,tipo:"crm",cor:T.teal});
-        overstayOntem.forEach(s=>acoes.push({icon:"⏱️",texto:`Overstay: ${s.user} em ${hubNome(s.hubKey)} (${s.overstayMin}min)`,tipo:"op",cor:T.amber}));
-        if(cancelAlerta)acoes.push({icon:"⚠️",texto:`Cancelamentos acima da média ontem: ${(cancelRate*100).toFixed(0)}% (média ${(avgCancelRate*100).toFixed(0)}%)`,tipo:"op",cor:T.amber});
-        saudeEstacoes.filter(e=>e.semMovimento).forEach(e=>acoes.push({icon:"🔌",texto:`${hubNome(e.hub)} sem sessões ontem — verificar carregador`,tipo:"op",cor:T.red}));
-        saudeEstacoes.filter(e=>e.abaixoMedia&&!e.semMovimento).forEach(e=>acoes.push({icon:"📉",texto:`${hubNome(e.hub)} abaixo da média (${brl(e.revOntem)} vs ${brl(e.avgRevDia)}/dia)`,tipo:"info",cor:T.text2}));
-
-        const[briefingOpen,setBriefingOpen]=useState(true);
-        const[acoesResolvidas,setAcoesResolvidas]=useState<number[]>([]);
-        const resolverAcao=(i:number)=>setAcoesResolvidas(prev=>[...prev,i]);
-        const acoesAtivas=acoes.filter((_,i)=>!acoesResolvidas.includes(i));
-
-        const dataOntem=maxDay.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
-        const mesNome=maxDay.toLocaleDateString("pt-BR",{month:"long"});
-
-        const crits=saudeEstacoes.filter(e=>e.status==="crit").length;
-        const warns=saudeEstacoes.filter(e=>e.status==="warn").length;
-        const briefingCor=crits>0?T.red:warns>0||acoesAtivas.filter(a=>a.tipo==="op").length>0?T.amber:T.green;
-        const briefingEmoji=crits>0?"🔴":warns>0?"🟡":"🟢";
-
-        return(
-          <div style={{marginBottom:16,background:`${briefingCor}06`,border:`1px solid ${briefingCor}30`,borderRadius:16,overflow:"hidden"}}>
-            {/* Header */}
-            <div onClick={()=>setBriefingOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:20}}>{briefingEmoji}</span>
-                <div>
-                  <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:briefingCor}}>Briefing do Dia — {dataOntem}</div>
-                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{acoesAtivas.length} ações · {saudeEstacoes.filter(e=>e.status==="ok").length}/{saudeEstacoes.length} estações ok · {mesNome}</div>
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                {acoesAtivas.filter(a=>a.tipo==="op").length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {acoesAtivas.filter(a=>a.tipo==="op").length}</span>}
-                {acoesAtivas.filter(a=>a.tipo==="crm").length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(239,68,68,0.2)",color:T.red,border:"1px solid rgba(239,68,68,0.3)"}}>📤 {acoesAtivas.filter(a=>a.tipo==="crm").length}</span>}
-                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{briefingOpen?"▲":"▼"}</span>
-              </div>
-            </div>
-
-            {briefingOpen&&(
-              <div style={{borderTop:`1px solid ${briefingCor}20`}}>
-
-                {/* SAÚDE POR ESTAÇÃO */}
-                <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Saúde das Estações</div>
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                    {saudeEstacoes.map(e=>{
-                      const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
-                      const emoji=e.status==="crit"?"🔴":e.status==="warn"?"🟡":"🟢";
-                      return(
-                        <div key={e.hub} style={{background:`${cor}08`,border:`1px solid ${cor}30`,borderRadius:10,padding:"8px 12px",minWidth:120}}>
-                          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
-                            <span style={{fontSize:12}}>{emoji}</span>
-                            <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:cor}}>{trunc(hubNome(e.hub),12)}</span>
-                          </div>
-                          <div style={{fontFamily:T.mono,fontSize:9,color:T.text2}}>
-                            {e.semMovimento?"sem sessões":e.sessOntem+" sess · "+brl(e.revOntem)}
-                          </div>
-                          {e.overstay>0&&<div style={{fontFamily:T.mono,fontSize:9,color:T.amber,marginTop:2}}>⏱️ {e.overstay} overstay</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* KPIs ONTEM vs MÊS */}
-                <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
-                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8}}>
-                    {[
-                      {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
-                      {label:"Energia",ontem:`${kwhOntem.toFixed(0)} kWh`,mes:`${kwhMes.toFixed(0)} kWh`,sub:`${(kwhMes/diasMes).toFixed(0)}/dia`,cor:T.amber},
-                      {label:"Sessões",ontem:`${sessOntem}`,mes:`${sessMes}`,sub:`${(sessMes/diasMes).toFixed(1)}/dia`,cor:T.blue},
-                      {label:"Ticket",ontem:sessOntem>0?brl(revOntem/sessOntem):"—",mes:sessMes>0?brl(revMes/sessMes):"—",sub:`R${kwhMes>0?(revMes/kwhMes).toFixed(2):"-"}/kWh`,cor:T.purple},
-                    ].map((k,i)=>(
-                      <div key={i} style={{background:T.bg2,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`}}>
-                        <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
-                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                          <div>
-                            <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>Ontem</div>
-                            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:k.cor}}>{k.ontem}</div>
-                          </div>
-                          <div>
-                            <div style={{fontFamily:T.mono,fontSize:8,color:T.text3,marginBottom:2}}>{mesNome.slice(0,3)}</div>
-                            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text2}}>{k.mes}</div>
-                          </div>
-                        </div>
-                        <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* FINANCEIRO POR ESTAÇÃO */}
-                <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Faturamento por Estação</div>
-                  <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?480:undefined}}>
-                      <thead>
-                        <tr>
-                          <th style={TH}>Estação</th>
-                          <th style={THR}>Ontem</th>
-                          <th style={THR}>{mesNome.slice(0,3)}</th>
-                          <th style={THR}>Proj.</th>
-                          <th style={THR}>R$/kWh</th>
-                          <th style={TH}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {saudeEstacoes.sort((a,b)=>{const rA=mesAtualOk.filter(s=>s.hubKey===a.hub).reduce((x,s)=>x+s.value,0);const rB=mesAtualOk.filter(s=>s.hubKey===b.hub).reduce((x,s)=>x+s.value,0);return rB-rA;}).map(e=>{
-                          const hMes=mesAtualOk.filter(s=>s.hubKey===e.hub);
-                          const revHMes=hMes.reduce((a,s)=>a+s.value,0);
-                          const kwhHMes=hMes.reduce((a,s)=>a+s.energy,0);
-                          const diasHMes=new Set(hMes.map(s=>s.date.toDateString())).size||1;
-                          const projH=revHMes/diasHMes*30;
-                          const precoH=kwhHMes>0?revHMes/kwhHMes:0;
-                          const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
-                          return(
-                            <tr key={e.hub} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-                              <td style={TD}><span style={{fontWeight:600,fontSize:12}}>{hubNome(e.hub)}</span></td>
-                              <td style={{...TDR,color:e.revOntem>0?T.green:T.text3}}>{e.revOntem>0?brl(e.revOntem):"—"}</td>
-                              <td style={{...TDR,color:T.text}}>{brl(revHMes)}</td>
-                              <td style={{...TDR,color:T.amber}}>{brl(projH)}</td>
-                              <td style={{...TDR,color:T.text2,fontSize:11}}>R${precoH.toFixed(2)}</td>
-                              <td style={TD}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{e.status==="crit"?"🔴 crítico":e.status==="warn"?"🟡 atenção":"🟢 ok"}</span></td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* USUÁRIOS EM ATENÇÃO */}
-                {(motoristasRisco.length>0||novosHoje.length>0)&&(
-                  <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Usuários em Atenção</div>
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
-                      {motoristasRisco.length>0&&(
-                        <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 12px"}}>
-                          <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.red,marginBottom:6}}>🔴 Motoristas em Risco ({motoristasRisco.length})</div>
-                          {motoristasRisco.slice(0,3).map(u=>(
-                            <div key={u.user} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-                              {trunc(u.user,20)} · {vipScores2[u.user]?.diasSemRecarga}d sem recarregar
-                            </div>
-                          ))}
-                          {motoristasRisco.length>3&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{motoristasRisco.length-3} outros</div>}
-                        </div>
-                      )}
-                      {novosHoje.length>0&&(
-                        <div style={{background:"rgba(1,96,112,0.06)",border:"1px solid rgba(1,96,112,0.2)",borderRadius:10,padding:"10px 12px"}}>
-                          <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.teal,marginBottom:6}}>🌱 Novos esta semana ({novosHoje.length})</div>
-                          {novosHoje.slice(0,3).map(u=>(
-                            <div key={u.user} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-                              {trunc(u.user,20)} · {hubNome(u.localFreqKey)}
-                            </div>
-                          ))}
-                          {novosHoje.length>3&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{novosHoje.length-3} outros</div>}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* AÇÕES SUGERIDAS */}
-                {acoesAtivas.length>0&&(
-                  <div style={{padding:"12px 16px"}}>
-                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Ações de Hoje</div>
-                    <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
-                      {acoesAtivas.map((a,i)=>(
-                        <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg2,borderRadius:8,border:`1px solid ${a.cor}20`,gap:10}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
-                            <span style={{fontSize:14,flexShrink:0}}>{a.icon}</span>
-                            <span style={{fontFamily:T.mono,fontSize:11,color:a.tipo==="op"?T.amber:a.tipo==="crm"?T.red:T.text2,lineHeight:1.4}}>{a.texto}</span>
-                          </div>
-                          <button onClick={()=>resolverAcao(acoes.indexOf(a))} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3,flexShrink:0,whiteSpace:"nowrap" as const}}>✓ Ok</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {acoesAtivas.length===0&&(
-                  <div style={{padding:"14px 16px",textAlign:"center" as const,fontFamily:T.mono,fontSize:11,color:T.green}}>
-                    ✅ Nenhuma ação pendente — operação normalizada
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      <Semaforo sessions={filtered}/>
-      <ProjecaoMensal sessions={filtered} meta={meta} onMetaChange={onMetaChange}/>
-      <SectionLabel>KPIs do Período</SectionLabel>
-      {/* KPIs — 2 colunas no mobile, 4 no desktop */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:14}}>
-        <KpiCard label="Faturamento" value={brl(totalRev)} sub={`R$\u00a0${(totalRev/days).toFixed(0)}/dia`} accent={T.green}/>
-        <KpiCard label="Energia" value={`${totalKwh.toFixed(0)} kWh`} sub={`${(totalKwh/days).toFixed(0)}/dia`} accent={T.amber}/>
-        <KpiCard label="Sessões" value={`${totalSess}`} sub={`${(totalSess/days).toFixed(1)}/dia`} accent={T.blue}/>
-        <KpiCard label="Preço/kWh" value={`R$\u00a0${priceKwh.toFixed(2)}`} sub={`Ticket: ${brl(ticket)}`} accent={T.red}/>
-      </div>
-
-      {/* Gráficos — empilhados no mobile */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.4fr 1fr",gap:14,marginBottom:24}}>
-        <Panel>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text}}>Performance por Hub</div>
-            <div style={{display:"flex",gap:4}}>{([["rev","R$"],["kwh","kWh"],["sess","Sess"]] as [typeof chartMode,string][]).map(([m,l])=>(<button key={m} onClick={()=>setChartMode(m)} style={{padding:"3px 9px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",border:`1px solid ${chartMode===m?T.green:T.border}`,background:chartMode===m?T.greenDim:"transparent",color:chartMode===m?T.green:T.text3}}>{l}</button>))}</div>
-          </div>
-          <ResponsiveContainer width="100%" height={180}><BarChart data={hubData} barCategoryGap="30%"><CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)"/><XAxis dataKey="name" tick={{fill:T.text3,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false}/><YAxis tickFormatter={v=>chartMode==="rev"?`R$${(v/1000).toFixed(0)}k`:`${v}`} tick={{fill:T.text3,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false} width={44}/><Tooltip content={<CustomTooltip suffix={chartMode==="rev"?"R$":chartMode==="kwh"?"kWh":""}/>} cursor={{fill:"rgba(255,255,255,0.03)"}}/><Bar dataKey={chartMode} fill={chartMode==="rev"?"rgba(0,229,160,0.65)":chartMode==="kwh"?"rgba(245,158,11,0.65)":"rgba(59,130,246,0.65)"} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer>
-        </Panel>
-        <Panel>
-          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,marginBottom:14,color:T.text}}>Top 5 Usuários</div>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr><th style={TH}>#</th><th style={TH}>Usuário</th><th style={TH}>Estação</th><th style={THR}>Total</th></tr></thead>
-            <tbody>{top5.map(([name,d],i)=>{
-              const rc=["#f59e0b","#94a3b8","#b47c3c"][i]||T.text3;
-              const hubShort=trunc(hubNome(d.mainHub),isMobile?8:12);
-              return(<tr key={name}>
-                <td style={TD}><span style={{fontFamily:T.mono,fontWeight:700,color:rc,fontSize:11}}>{i+1}</span></td>
-                <td style={TD}><span style={{fontSize:12,fontWeight:500}}>{trunc(name,isMobile?10:16)}</span></td>
-                <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,color:T.text2,background:`${T.border}`,padding:"2px 6px",borderRadius:4}}>{hubShort}</span></td>
-                <td style={{...TDR,color:T.green,fontWeight:600}}>{brl(d.rev)}</td>
-              </tr>);
-            })}</tbody>
-          </table>
-        </Panel>
-      </div>
-      {/* TERMÔMETRO NEON — Receita Hoje vs Mês */}
+            {/* TERMÔMETRO NEON — Receita Hoje vs Mês */}
       {(()=>{
         const allOkDash=ok;
         const dts2=allOkDash.map(s=>s.date.getTime());
@@ -1246,55 +1209,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
       })()}
 
       {/* PARCEIROS — card colapsável */}
-      {(()=>{
-        const allParceiros=classificarUsuarios(ok).filter(u=>u.isParceiro);
-        if(allParceiros.length===0)return null;
-        const[parcOpen,setParcOpen]=useState(false);
-        const volTotal=allParceiros.reduce((a,u)=>{
-          const uSess=ok.filter(s=>s.user===u.user);
-          return a+uSess.reduce((b,s)=>b+s.energy,0);
-        },0);
-        return(
-          <div style={{marginBottom:24,background:T.bg2,border:`1px solid rgba(59,130,246,0.25)`,borderRadius:14,overflow:"hidden"}}>
-            <div onClick={()=>setParcOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:16}}>🔵</span>
-                <div>
-                  <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#60a5fa"}}>Parceiros & Embaixadores</div>
-                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{allParceiros.length} parceiros · {volTotal.toFixed(0)} kWh total</div>
-                </div>
-              </div>
-              <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{parcOpen?"▲":"▼"}</span>
-            </div>
-            {parcOpen&&(
-              <div style={{borderTop:"1px solid rgba(59,130,246,0.15)",overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
-                  <thead><tr style={{background:T.bg3}}>
-                    <th style={TH}>Parceiro</th>
-                    <th style={TH}>Estação</th>
-                    <th style={THR}>kWh</th>
-                    <th style={THR}>Sessões</th>
-                  </tr></thead>
-                  <tbody>
-                    {allParceiros.map(u=>{
-                      const uSess=ok.filter(s=>s.user===u.user);
-                      const kwhU=uSess.reduce((a,s)=>a+s.energy,0);
-                      return(
-                        <tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-                          <td style={TD}><span style={{fontSize:12,fontWeight:500}}>{trunc(u.user,isMobile?14:22)}</span></td>
-                          <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{trunc(hubNome(u.localFreqKey),12)}</span></td>
-                          <td style={{...TDR,color:T.amber,fontSize:11}}>{kwhU.toFixed(0)}</td>
-                          <td style={{...TDR,color:T.text2,fontSize:11}}>{uSess.length}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      <ParceirosCard ok={ok} isMobile={isMobile}/>
 
             <SectionLabel>Receita Diária por Estação</SectionLabel>
       <Panel style={{marginBottom:24}}>
@@ -1566,6 +1481,258 @@ function TabDRE({sessions,appState}:{sessions:Session[];appState:AppState}){
   );
 }
 
+// ─── FILA DO DIA COMPONENTE ──────────────────────────────────────────────────
+interface FilaDoDiaProps{
+  sessions:Session[];appState:AppState;
+  localDisparos:{ts:string;nome:string;msgId:string;status:"ok"|"err";msg?:string}[];
+  getMsgTemplate:(k:string)=>string;
+  abrirPreview:(nome:string,hubK:string,msgId:string,template:string,cupom:string)=>void;
+  enviarUm:(nome:string,hubK:string,msgId:string,template:string,cupom:string)=>Promise<void>;
+  onSaveState:(p:Partial<AppState>)=>void;
+  isMobile:boolean;
+  sending:Record<string,boolean>;
+}
+function FilaDoDia({sessions,appState,localDisparos,getMsgTemplate,abrirPreview,enviarUm,onSaveState,isMobile,sending}:FilaDoDiaProps){
+  const limite=appState.limiteDisparoDiario||20;
+  const horarioInicio=appState.metas["crm_inicio"]||9;
+  const horarioFim=appState.metas["crm_fim"]||18;
+  const intervaloMin=appState.metas["crm_intervalo_min"]||15;
+  const intervaloMax=appState.metas["crm_intervalo_max"]||45;
+  const{fila,semTelefone,novosDetectados}=useMemo(()=>gerarFilaDia(sessions,appState,limite),[sessions,appState,limite]);
+  const disparadosHoje=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
+  const[filaExpanded,setFilaExpanded]=useState(true);
+  const[semTelExpanded,setSemTelExpanded]=useState(false);
+  const segCores:Record<string,string>={Motorista:T.red,Heavy:T.amber,Shopper:T.green,Parceiro:T.blue,Embaixador:"#8b5cf6"};
+  const[autoStatus,setAutoStatus]=useState<"idle"|"running"|"paused"|"done">("idle");
+  const[autoIdx,setAutoIdx]=useState(0);
+  const[autoTotal,setAutoTotal]=useState(0);
+  const[proximoHorario,setProximoHorario]=useState<Date|null>(null);
+  const[autoLog,setAutoLog]=useState<{nome:string;status:"ok"|"err";ts:Date}[]>([]);
+  const autoRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const pausedRef=useRef(false);
+
+  const calcHorarios=(n:number)=>{
+    const agora=new Date();
+    const inicio=new Date();inicio.setHours(horarioInicio,0,0,0);
+    const fim=new Date();fim.setHours(horarioFim,30,0,0);
+    const base=agora>inicio?agora:inicio;
+    const horarios:Date[]=[];
+    let cursor=new Date(base.getTime());
+    for(let i=0;i<n;i++){
+      horarios.push(new Date(cursor));
+      const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin);
+      cursor=new Date(cursor.getTime()+delay*60000);
+      if(cursor>fim)break;
+    }
+    return horarios;
+  };
+
+  const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
+    if(msgId==="msg2a"){
+      if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
+      if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+      return getMsgTemplate("msg2a_parkway");
+    }
+    if(msgId==="msg2b"){
+      if(hubK==="costa")return getMsgTemplate("msg2b_costa");
+      if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
+      return getMsgTemplate("msg2b_parkway");
+    }
+    return getMsgTemplate("msg1");
+  };
+
+  const iniciarDisparo=async()=>{
+    if(fila.length===0){return;}
+    const horarios=calcHorarios(fila.length);
+    if(!window.confirm(`Disparar para ${fila.length} usuários?
+Primeira mensagem: agora
+Última: ~${horarios[horarios.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+Intervalo: ${intervaloMin}–${intervaloMax} min entre cada`))return;
+    setAutoStatus("running");setAutoIdx(0);setAutoTotal(fila.length);setAutoLog([]);pausedRef.current=false;
+    const disparar=async(i:number)=>{
+      if(i>=fila.length){setAutoStatus("done");return;}
+      if(pausedRef.current){setAutoStatus("paused");return;}
+      const u=fila[i];setAutoIdx(i);
+      const template=getMsgPorEstacao(u.msgId,u.hubKey);
+      const cupomFila=u.msgId==="msg2a"?(u.hubKey==="cidadeauto"?getMsgTemplate("cupom_cidadeauto"):u.hubKey==="costa"?getMsgTemplate("cupom_costa"):getMsgTemplate("cupom_parkway")):"";
+      await enviarUm(u.nome,u.hubKey,u.msgId,template,cupomFila);
+      setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
+      const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
+      const proximo=new Date(Date.now()+delay);
+      setProximoHorario(proximo);
+      if(i<fila.length-1){autoRef.current=setTimeout(()=>disparar(i+1),delay);}
+      else{setAutoStatus("done");}
+    };
+    disparar(0);
+  };
+
+  const pausarDisparo=()=>{pausedRef.current=true;if(autoRef.current)clearTimeout(autoRef.current);setAutoStatus("paused");};
+  const retomar=()=>{
+    pausedRef.current=false;setAutoStatus("running");
+    const i=autoIdx+1;
+    const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
+    autoRef.current=setTimeout(()=>{
+      const disparar=async(idx:number)=>{
+        if(idx>=fila.length){setAutoStatus("done");return;}
+        if(pausedRef.current){setAutoStatus("paused");return;}
+        const u=fila[idx];setAutoIdx(idx);
+        const template=getMsgPorEstacao(u.msgId,u.hubKey);
+        const cupomFila=u.msgId==="msg2a"?(u.hubKey==="cidadeauto"?getMsgTemplate("cupom_cidadeauto"):u.hubKey==="costa"?getMsgTemplate("cupom_costa"):getMsgTemplate("cupom_parkway")):"";
+        await enviarUm(u.nome,u.hubKey,u.msgId,template,cupomFila);
+        setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
+        const d=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
+        setProximoHorario(new Date(Date.now()+d));
+        if(idx<fila.length-1)autoRef.current=setTimeout(()=>disparar(idx+1),d);
+        else setAutoStatus("done");
+      };
+      disparar(i);
+    },delay);
+  };
+
+  const pct=autoTotal>0?Math.round((autoIdx/autoTotal)*100):0;
+  const horariosPreview=fila.length>0?calcHorarios(fila.length):[];
+
+  return(
+    <div style={{marginBottom:20}}>
+      <div style={{background:"rgba(0,229,160,0.06)",border:"1px solid rgba(0,229,160,0.25)",borderRadius:14,overflow:"hidden",marginBottom:10}}>
+        <div onClick={()=>setFilaExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>🎯</span>
+            <div>
+              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Fila do Dia — Algoritmo Inteligente</div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{fila.length} prontos · {disparadosHoje}/{limite} hoje · {semTelefone.length} sem tel · {intervaloMin}–{intervaloMax} min intervalo</div>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {novosDetectados.length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {novosDetectados.length} novos</span>}
+            <span style={{fontFamily:T.mono,fontSize:11,padding:"2px 9px",borderRadius:20,background:"rgba(0,229,160,0.15)",color:T.green,border:"1px solid rgba(0,229,160,0.3)"}}>{fila.length}</span>
+            <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{filaExpanded?"▲":"▼"}</span>
+          </div>
+        </div>
+        {autoStatus!=="idle"&&(
+          <div style={{padding:"12px 16px",borderTop:"1px solid rgba(0,229,160,0.2)",background:"rgba(0,229,160,0.04)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:6}}>
+              <div style={{fontFamily:T.mono,fontSize:11,color:T.green}}>
+                {autoStatus==="running"?"⚡ Disparando...":autoStatus==="paused"?"⏸️ Pausado":autoStatus==="done"?"✅ Concluído":""}
+                {" "}<span style={{color:T.text2}}>{autoIdx}/{autoTotal} enviados</span>
+              </div>
+              {autoStatus==="running"&&proximoHorario&&<span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>próxima: {proximoHorario.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>}
+              <div style={{display:"flex",gap:8}}>
+                {autoStatus==="running"&&<button onClick={pausarDisparo} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.3)",color:T.amber}}>⏸️ Pausar</button>}
+                {autoStatus==="paused"&&<button onClick={retomar} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green}}>▶️ Retomar</button>}
+                {(autoStatus==="paused"||autoStatus==="done")&&<button onClick={()=>{setAutoStatus("idle");setAutoIdx(0);setAutoLog([]);}} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3}}>↩ Reset</button>}
+              </div>
+            </div>
+            <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:T.green,borderRadius:3,transition:"width 0.5s"}}/>
+            </div>
+            {autoLog.length>0&&(
+              <div style={{marginTop:8,maxHeight:80,overflowY:"auto"}}>
+                {autoLog.slice(0,5).map((l,i)=>(<div key={i} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"2px 0"}}>{l.status==="ok"?"✅":"❌"} {trunc(l.nome,20)} · {l.ts.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>))}
+              </div>
+            )}
+          </div>
+        )}
+        {filaExpanded&&(
+          <div style={{borderTop:"1px solid rgba(0,229,160,0.2)"}}>
+            {novosDetectados.length>0&&(
+              <div style={{padding:"10px 16px",background:"rgba(245,158,11,0.06)",borderBottom:"1px solid rgba(245,158,11,0.2)",fontFamily:T.mono,fontSize:11,color:T.amber}}>
+                ⚠️ Novos usuários sem cadastro: <strong>{novosDetectados.slice(0,5).join(", ")}{novosDetectados.length>5?` +${novosDetectados.length-5}`:""}</strong>
+                <br/><span style={{fontSize:10,color:T.text3}}>→ Exporte CSV de usuários da Spott e importe em Config → Contatos → Base Mestre</span>
+              </div>
+            )}
+            {fila.length===0?(
+              <div style={{padding:"20px",textAlign:"center" as const,fontFamily:T.mono,fontSize:11,color:T.text3}}>
+                {disparadosHoje>=limite?"✅ Limite diário atingido":"✅ Fila vazia — todos contactados recentemente"}
+              </div>
+            ):(
+              <>
+                {autoStatus==="idle"&&(
+                  <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(0,229,160,0.15)",background:"rgba(0,229,160,0.03)"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                      <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>
+                        {fila.length} mensagens · {horarioInicio}h–{horarioFim}h · intervalo {intervaloMin}–{intervaloMax} min
+                        {horariosPreview.length>0&&<span style={{color:T.text3}}> · última ~{horariosPreview[horariosPreview.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>}
+                      </div>
+                      <button onClick={iniciarDisparo} style={{padding:"8px 20px",borderRadius:10,fontFamily:T.sans,fontSize:13,fontWeight:700,cursor:"pointer",background:T.green,color:T.bg,border:"none"}}>
+                        🚀 Iniciar Fila do Dia
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?400:undefined}}>
+                    <thead><tr style={{background:T.bg3}}>
+                      <th style={TH}>Usuário</th><th style={TH}>Segmento</th><th style={TH}>Estação</th>
+                      <th style={THR}>Dias</th><th style={TH}>Fonte</th><th style={THR}></th>
+                    </tr></thead>
+                    <tbody>
+                      {fila.map((u,idx)=>{
+                        const cor=segCores[u.segmento]||T.text2;
+                        const tipoEmoji=u.hubTipoStr==="propria"?"🏠":u.hubTipoStr==="parceria"?"🤝":"📋";
+                        const sendKey=`${u.nome}_${u.msgId}_fila`;
+                        const template=getMsgPorEstacao(u.msgId,u.hubKey);
+                        const isEnviado=autoLog.some(l=>l.nome===u.nome);
+                        const isAtual=autoStatus==="running"&&autoIdx===idx;
+                        return(
+                          <tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",background:isAtual?"rgba(0,229,160,0.06)":isEnviado?"rgba(255,255,255,0.02)":"",opacity:isEnviado?0.5:1}}>
+                            <td style={TD}>
+                              <div style={{fontWeight:500,fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                                {isEnviado&&<span style={{color:T.green,fontSize:10}}>✅</span>}
+                                {isAtual&&<span style={{fontSize:10}}>⚡</span>}
+                                {trunc(u.nome,isMobile?14:22)}
+                              </div>
+                              <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.sessoes}x · R${u.valor.toFixed(0)}</div>
+                            </td>
+                            <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}18`,color:cor,border:`1px solid ${cor}30`}}>{u.segmento}</span>{u.fonteSegmento!=="csv"&&<span style={{fontFamily:T.mono,fontSize:9,color:T.green,marginLeft:4}}>✓</span>}</td>
+                            <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{tipoEmoji} {trunc(u.hubNomeStr,isMobile?10:16)}</span></td>
+                            <td style={{...TDR,color:u.diasSemRecarga>21?T.red:u.diasSemRecarga>10?T.amber:T.text2,fontSize:11}}>{u.diasSemRecarga}d</td>
+                            <td style={{...TD,fontSize:10,color:T.text3}}>{u.fonteSegmento}</td>
+                            <td style={TDR}>
+                              <button onClick={()=>abrirPreview(u.nome,u.hubKey,u.msgId,template,"")} disabled={sending[sendKey]||isEnviado} style={{padding:"5px 10px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:isEnviado?"default":"pointer",background:isEnviado?"rgba(255,255,255,0.03)":sending[sendKey]?"rgba(255,255,255,0.05)":"rgba(0,229,160,0.15)",border:`1px solid ${isEnviado?T.border:sending[sendKey]?T.border:"rgba(0,229,160,0.3)"}`,color:isEnviado?T.text3:sending[sendKey]?T.text3:T.green}}>{isEnviado?"✓":sending[sendKey]?"⏳":"📤"}</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      {semTelefone.length>0&&(
+        <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:12,overflow:"hidden",marginBottom:10}}>
+          <div onClick={()=>setSemTelExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",cursor:"pointer"}}>
+            <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.red}}>📵 Sem telefone — {semTelefone.length} usuários</div>
+            <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{semTelExpanded?"▲":"▼"}</span>
+          </div>
+          {semTelExpanded&&(
+            <div style={{borderTop:"1px solid rgba(239,68,68,0.15)",overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
+                <thead><tr><th style={TH}>Usuário</th><th style={TH}>Segmento</th><th style={TH}>Estação</th><th style={THR}>Valor</th><th style={TH}>Email</th></tr></thead>
+                <tbody>
+                  {semTelefone.slice(0,20).map(u=>{
+                    const cor=segCores[u.segmento]||T.text2;
+                    return(<tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+                      <td style={TD}><div style={{fontSize:12}}>{trunc(u.nome,isMobile?14:20)}</div></td>
+                      <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{u.segmento}</span></td>
+                      <td style={{...TD,fontSize:11,color:T.text2}}>{trunc(u.hubNomeStr,12)}</td>
+                      <td style={{...TDR,color:T.text2,fontSize:11}}>R${u.valor.toFixed(0)}</td>
+                      <td style={{...TD,fontSize:10,color:u.email?T.blue:T.text3}}>{u.email?`✉️ ${trunc(u.email,isMobile?12:20)}`:"—"}</td>
+                    </tr>);
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── TAB AÇÕES ───────────────────────────────────────────────────────────────
 function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void;onSaveState:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
@@ -1758,309 +1925,8 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
       </div>
 
       {/* FILA DO DIA — ALGORITMO INTELIGENTE */}
-      {(()=>{
-        const limite=appState.limiteDisparoDiario||20;
-        const cfgCRM=appState.zapi||{instanceId:"",token:"",clientToken:""};
-        const horarioInicio=appState.metas["crm_inicio"]||9;
-        const horarioFim=appState.metas["crm_fim"]||18;
-        const intervaloMin=appState.metas["crm_intervalo_min"]||15;
-        const intervaloMax=appState.metas["crm_intervalo_max"]||45;
-        const{fila,semTelefone,novosDetectados}=useMemo(()=>gerarFilaDia(sessions,appState,limite),[sessions,appState,limite]);
-        const disparadosHoje=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
-        const[filaExpanded,setFilaExpanded]=useState(true);
-        const[semTelExpanded,setSemTelExpanded]=useState(false);
-        const segCores:Record<string,string>={Motorista:T.red,Heavy:T.amber,Shopper:T.green,Parceiro:T.blue,Embaixador:"#8b5cf6"};
-
-        // ── ESTADO DE DISPARO AUTOMÁTICO ──────────────────────────────────────
-        const[autoStatus,setAutoStatus]=useState<"idle"|"running"|"paused"|"done">("idle");
-        const[autoIdx,setAutoIdx]=useState(0);
-        const[autoTotal,setAutoTotal]=useState(0);
-        const[proximoHorario,setProximoHorario]=useState<Date|null>(null);
-        const[autoLog,setAutoLog]=useState<{nome:string;status:"ok"|"err";ts:Date}[]>([]);
-        const autoRef=useRef<ReturnType<typeof setTimeout>|null>(null);
-        const pausedRef=useRef(false);
-
-        // Calcular preview dos horários
-        const calcHorarios=(n:number):{horarios:Date[];durMin:number}=>{
-          const agora=new Date();
-          const inicio=new Date();inicio.setHours(horarioInicio,0,0,0);
-          const fim=new Date();fim.setHours(horarioFim,30,0,0);
-          const base=agora>inicio?agora:inicio;
-          const horarios:Date[]=[];
-          let cursor=new Date(base.getTime());
-          for(let i=0;i<n;i++){
-            horarios.push(new Date(cursor));
-            const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin);
-            cursor=new Date(cursor.getTime()+delay*60000);
-            if(cursor>fim)break;
-          }
-          const durMin=horarios.length>1?Math.round((horarios[horarios.length-1].getTime()-horarios[0].getTime())/60000):0;
-          return{horarios,durMin};
-        };
-
-        const iniciarDisparo=async()=>{
-          if(fila.length===0){alert("Fila vazia.");return;}
-          const{horarios}=calcHorarios(fila.length);
-          // disparo direto — confirmação já no botão principal
-          setAutoStatus("running");setAutoIdx(0);setAutoTotal(fila.length);setAutoLog([]);pausedRef.current=false;
-          const disparar=async(i:number)=>{
-            if(i>=fila.length){setAutoStatus("done");return;}
-            if(pausedRef.current){setAutoStatus("paused");return;}
-            const u=fila[i];
-            setAutoIdx(i);
-            // Enviar mensagem
-            const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
-                              if(msgId==="msg2a"){
-                                if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
-                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
-                                return getMsgTemplate("msg2a_parkway"); // proprias e demais
-                              }
-                              if(msgId==="msg2b"){
-                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
-                                if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
-                                return getMsgTemplate("msg2b_parkway");
-                              }
-                              return getMsgTemplate("msg1");
-                            };
-                            const template=getMsgPorEstacao(u.msgId,u.hubKey);
-            const cupomFila=u.msgId==="msg2a"?(u.hubKey==="cidadeauto"?getMsgTemplate("cupom_cidadeauto"):u.hubKey==="costa"?getMsgTemplate("cupom_costa"):getMsgTemplate("cupom_parkway")):u.msgId==="msg_vip"?getMsgTemplate("cupom_vip"):"";
-            await enviarUm(u.nome,u.hubKey,u.msgId,template,cupomFila);
-            setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
-            // Calcular próximo delay
-            const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
-            const proximo=new Date(Date.now()+delay);
-            setProximoHorario(proximo);
-            if(i<fila.length-1){
-              autoRef.current=setTimeout(()=>disparar(i+1),delay);
-            }else{
-              setAutoStatus("done");
-            }
-          };
-          disparar(0);
-        };
-
-        const pausarDisparo=()=>{
-          pausedRef.current=true;
-          if(autoRef.current)clearTimeout(autoRef.current);
-          setAutoStatus("paused");
-        };
-
-        const retomar=()=>{
-          pausedRef.current=false;
-          setAutoStatus("running");
-          const i=autoIdx+1;
-          const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
-          autoRef.current=setTimeout(()=>{
-            const disparar=async(idx:number)=>{
-              if(idx>=fila.length){setAutoStatus("done");return;}
-              if(pausedRef.current){setAutoStatus("paused");return;}
-              const u=fila[idx];setAutoIdx(idx);
-              const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
-                              if(msgId==="msg2a"){
-                                if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
-                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
-                                return getMsgTemplate("msg2a_parkway"); // proprias e demais
-                              }
-                              if(msgId==="msg2b"){
-                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
-                                if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
-                                return getMsgTemplate("msg2b_parkway");
-                              }
-                              return getMsgTemplate("msg1");
-                            };
-                            const template=getMsgPorEstacao(u.msgId,u.hubKey);
-              await enviarUm(u.nome,u.hubKey,u.msgId,template,"");
-              setAutoLog(prev=>[{nome:u.nome,status:"ok",ts:new Date()},...prev]);
-              const d=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
-              setProximoHorario(new Date(Date.now()+d));
-              if(idx<fila.length-1)autoRef.current=setTimeout(()=>disparar(idx+1),d);
-              else setAutoStatus("done");
-            };
-            disparar(i);
-          },delay);
-        };
-
-        const pct=autoTotal>0?Math.round((autoIdx/autoTotal)*100):0;
-        const{horarios:horariosPreview}=fila.length>0?calcHorarios(fila.length):{horarios:[]};
-
-        return(
-          <div style={{marginBottom:20}}>
-            {/* Header Fila do Dia */}
-            <div style={{background:"rgba(0,229,160,0.06)",border:"1px solid rgba(0,229,160,0.25)",borderRadius:14,overflow:"hidden",marginBottom:10}}>
-              <div onClick={()=>setFilaExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:18}}>🎯</span>
-                  <div>
-                    <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Fila do Dia — Algoritmo Inteligente</div>
-                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{fila.length} prontos · {disparadosHoje}/{limite} hoje · {semTelefone.length} sem tel · {intervaloMin}–{intervaloMax} min intervalo</div>
-                  </div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  {novosDetectados.length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {novosDetectados.length} novos</span>}
-                  <span style={{fontFamily:T.mono,fontSize:11,padding:"2px 9px",borderRadius:20,background:"rgba(0,229,160,0.15)",color:T.green,border:"1px solid rgba(0,229,160,0.3)"}}>{fila.length}</span>
-                  <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{filaExpanded?"▲":"▼"}</span>
-                </div>
-              </div>
-
-              {/* BARRA DE PROGRESSO DISPARO */}
-              {autoStatus!=="idle"&&(
-                <div style={{padding:"12px 16px",borderTop:"1px solid rgba(0,229,160,0.2)",background:"rgba(0,229,160,0.04)"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:6}}>
-                    <div style={{fontFamily:T.mono,fontSize:11,color:T.green}}>
-                      {autoStatus==="running"?"⚡ Disparando...":autoStatus==="paused"?"⏸️ Pausado":autoStatus==="done"?"✅ Concluído":""}
-                      {" "}<span style={{color:T.text2}}>{autoIdx}/{autoTotal} enviados</span>
-                    </div>
-                    {autoStatus==="running"&&proximoHorario&&(
-                      <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>próxima: {proximoHorario.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>
-                    )}
-                    <div style={{display:"flex",gap:8}}>
-                      {autoStatus==="running"&&<button onClick={pausarDisparo} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.3)",color:T.amber}}>⏸️ Pausar</button>}
-                      {autoStatus==="paused"&&<button onClick={retomar} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green}}>▶️ Retomar</button>}
-                      {(autoStatus==="paused"||autoStatus==="done")&&<button onClick={()=>{setAutoStatus("idle");setAutoIdx(0);setAutoLog([]);}} style={{padding:"4px 12px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3}}>↩ Reset</button>}
-                    </div>
-                  </div>
-                  <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
-                    <div style={{height:"100%",width:`${pct}%`,background:autoStatus==="done"?T.green:T.green,borderRadius:3,transition:"width 0.5s"}}/>
-                  </div>
-                  {autoLog.length>0&&(
-                    <div style={{marginTop:8,maxHeight:80,overflowY:"auto"}}>
-                      {autoLog.slice(0,5).map((l,i)=>(
-                        <div key={i} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"2px 0"}}>
-                          {l.status==="ok"?"✅":"❌"} {trunc(l.nome,20)} · {l.ts.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {filaExpanded&&(
-                <div style={{borderTop:`1px solid rgba(0,229,160,0.2)`}}>
-                  {novosDetectados.length>0&&(
-                    <div style={{padding:"10px 16px",background:"rgba(245,158,11,0.06)",borderBottom:"1px solid rgba(245,158,11,0.2)",fontFamily:T.mono,fontSize:11,color:T.amber}}>
-                      ⚠️ Novos usuários sem cadastro: <strong>{novosDetectados.slice(0,5).join(", ")}{novosDetectados.length>5?` +${novosDetectados.length-5}`:""}</strong>
-                      <br/><span style={{fontSize:10,color:T.text3}}>→ Exporte CSV de usuários da Spott e importe em Config → Contatos → Base Mestre</span>
-                    </div>
-                  )}
-                  {fila.length===0?(
-                    <div style={{padding:"20px",textAlign:"center",fontFamily:T.mono,fontSize:11,color:T.text3}}>
-                      {disparadosHoje>=limite?"✅ Limite diário atingido":"✅ Fila vazia — todos contactados recentemente"}
-                    </div>
-                  ):(
-                    <>
-                      {/* BOTÃO INICIAR + PREVIEW */}
-                      {autoStatus==="idle"&&(
-                        <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(0,229,160,0.15)`,background:"rgba(0,229,160,0.03)"}}>
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>
-                              {fila.length} mensagens · {horarioInicio}h–{horarioFim}h · intervalo {intervaloMin}–{intervaloMax} min
-                              {horariosPreview.length>0&&<span style={{color:T.text3}}> · última ~{horariosPreview[horariosPreview.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>}
-                            </div>
-                            <button
-                              onClick={iniciarDisparo}
-                              style={{padding:"8px 20px",borderRadius:10,fontFamily:T.sans,fontSize:13,fontWeight:700,cursor:"pointer",background:T.green,color:T.bg,border:"none"}}
-                            >
-                              🚀 Iniciar Fila do Dia
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-                        <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?400:undefined}}>
-                          <thead><tr style={{background:T.bg3}}>
-                            <th style={TH}>Usuário</th>
-                            <th style={TH}>Segmento</th>
-                            <th style={TH}>Estação</th>
-                            <th style={{...THR}}>Dias</th>
-                            <th style={TH}>Fonte</th>
-                            <th style={THR}></th>
-                          </tr></thead>
-                          <tbody>
-                            {fila.map((u,idx)=>{
-                              const cor=segCores[u.segmento]||T.text2;
-                              const tipoEmoji=u.hubTipoStr==="propria"?"🏠":u.hubTipoStr==="parceria"?"🤝":"📋";
-                              const sendKey=`${u.nome}_${u.msgId}_fila`;
-                              const getMsgPorEstacao=(msgId:string,hubK:string):string=>{
-                              if(msgId==="msg2a"){
-                                if(hubK==="cidadeauto")return getMsgTemplate("msg2a_cidadeauto");
-                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
-                                return getMsgTemplate("msg2a_parkway"); // proprias e demais
-                              }
-                              if(msgId==="msg2b"){
-                                if(hubK==="costa")return getMsgTemplate("msg2b_costa");
-                                if(hubK==="cidadeauto")return getMsgTemplate("msg2b_cidadeauto");
-                                return getMsgTemplate("msg2b_parkway");
-                              }
-                              return getMsgTemplate("msg1");
-                            };
-                            const template=getMsgPorEstacao(u.msgId,u.hubKey);
-                              const isEnviado=autoLog.some(l=>l.nome===u.nome);
-                              const isAtual=autoStatus==="running"&&autoIdx===idx;
-                              return(
-                                <tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",background:isAtual?"rgba(0,229,160,0.06)":isEnviado?"rgba(255,255,255,0.02)":"",opacity:isEnviado?0.5:1}}>
-                                  <td style={TD}>
-                                    <div style={{fontWeight:500,fontSize:12,display:"flex",alignItems:"center",gap:6}}>
-                                      {isEnviado&&<span style={{color:T.green,fontSize:10}}>✅</span>}
-                                      {isAtual&&<span style={{fontSize:10}}>⚡</span>}
-                                      {trunc(u.nome,isMobile?14:22)}
-                                    </div>
-                                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.sessoes}x · R${u.valor.toFixed(0)}</div>
-                                  </td>
-                                  <td style={TD}>
-                                    <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}18`,color:cor,border:`1px solid ${cor}30`}}>{u.segmento}</span>
-                                    {u.fonteSegmento!=="csv"&&<span style={{fontFamily:T.mono,fontSize:9,color:T.green,marginLeft:4}}>✓</span>}
-                                  </td>
-                                  <td style={TD}>
-                                    <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{tipoEmoji} {trunc(u.hubNomeStr,isMobile?10:16)}</span>
-                                  </td>
-                                  <td style={{...TDR,color:u.diasSemRecarga>21?T.red:u.diasSemRecarga>10?T.amber:T.text2,fontSize:11}}>{u.diasSemRecarga}d</td>
-                                  <td style={{...TD,fontSize:10,color:T.text3}}>{u.fonteSegmento}</td>
-                                  <td style={TDR}>
-                                    <button onClick={()=>abrirPreview(u.nome,u.hubKey,u.msgId,template,"")} disabled={sending[sendKey]||isEnviado} style={{padding:"5px 10px",borderRadius:6,fontFamily:T.mono,fontSize:11,cursor:isEnviado?"default":"pointer",background:isEnviado?"rgba(255,255,255,0.03)":sending[sendKey]?"rgba(255,255,255,0.05)":"rgba(0,229,160,0.15)",border:`1px solid ${isEnviado?T.border:sending[sendKey]?T.border:"rgba(0,229,160,0.3)"}`,color:isEnviado?T.text3:sending[sendKey]?T.text3:T.green}}>{isEnviado?"✓":sending[sendKey]?"⏳":"📤"}</button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            {/* Sem telefone */}
-            {semTelefone.length>0&&(
-              <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:12,overflow:"hidden",marginBottom:10}}>
-                <div onClick={()=>setSemTelExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",cursor:"pointer"}}>
-                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.red}}>📵 Sem telefone — {semTelefone.length} usuários</div>
-                  <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{semTelExpanded?"▲":"▼"}</span>
-                </div>
-                {semTelExpanded&&(
-                  <div style={{borderTop:"1px solid rgba(239,68,68,0.15)",overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
-                      <thead><tr><th style={TH}>Usuário</th><th style={TH}>Segmento</th><th style={TH}>Estação</th><th style={{...THR}}>Valor</th><th style={TH}>Email</th></tr></thead>
-                      <tbody>
-                        {semTelefone.slice(0,20).map(u=>{
-                          const cor=segCores[u.segmento]||T.text2;
-                          return(<tr key={u.nome} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
-                            <td style={TD}><div style={{fontSize:12}}>{trunc(u.nome,isMobile?14:20)}</div></td>
-                            <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{u.segmento}</span></td>
-                            <td style={{...TD,fontSize:11,color:T.text2}}>{trunc(u.hubNomeStr,12)}</td>
-                            <td style={{...TDR,color:T.text2,fontSize:11}}>R${u.valor.toFixed(0)}</td>
-                            <td style={{...TD,fontSize:10,color:u.email?T.blue:T.text3}}>{u.email?`✉️ ${trunc(u.email,isMobile?12:20)}`:"—"}</td>
-                          </tr>);
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-      {zapiStatus==="err"&&(<div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:T.amber}}>⚠️ Configure em Config → Z-API</div>)}
+      <FilaDoDia sessions={sessions} appState={appState} localDisparos={localDisparos} getMsgTemplate={getMsgTemplate} abrirPreview={abrirPreview} enviarUm={enviarUm} onSaveState={onSaveState} isMobile={isMobile} sending={sending}/>
+            {zapiStatus==="err"&&(<div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:T.amber}}>⚠️ Configure em Config → Z-API</div>)}
       {Object.keys(appState.contatos).length===0&&(<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:"#60a5fa"}}>ℹ️ Importe o CSV de usuários em Config → Contatos.</div>)}
       {/* Seções CRM */}
       {secoes.map(sec=>{
