@@ -3312,7 +3312,7 @@ function TabGoals({sessions,appState}:{sessions:Session[];appState:AppState}){
               const totalSess=hSess.length;
               const totalRev=hSess.reduce((a,s)=>a+s.value,0);
               const usuarios=new Set(hSess.map(s=>s.user)).size;
-              const motoristasH=new Set(hSess.filter(s=>motoristasSetGoals.has(s.user)).map(s=>s.user)).size;
+              const motoristasH=new Set(hSess.filter(s=>classificarUsuarios(ok).some(u=>u.user===s.user&&u.isMotorista)).map(s=>s.user)).size;
               const ticketMedio=totalSess>0?totalRev/totalSess:0;
               const datas=hSess.map(s=>s.date.getTime());
               const diasOp=datas.length?Math.round((Math.max(...datas)-Math.min(...datas))/86400000)+1:1;
