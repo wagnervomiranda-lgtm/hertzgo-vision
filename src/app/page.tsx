@@ -809,11 +809,16 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
 }
 
 // ─── BRIEFING DIÁRIO ─────────────────────────────────────────────────────────
-function BriefingDiario({sessions,appState,meta,isMobile,ok,maxDay,maxTs,mesAtual,anoAtual,maxData}:{
+function BriefingDiario({sessions,appState,meta,isMobile}:{
   sessions:Session[];appState:AppState;meta:number;isMobile:boolean;
-  ok:Session[];maxDay:Date;maxTs:number;mesAtual:number;anoAtual:number;maxData:Date;
 }){
-  const hoje=Date.now();
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const allTs=ok.map(s=>s.date.getTime());
+  const maxTs=allTs.length?Math.max(...allTs):Date.now();
+  const maxDay=new Date(maxTs);maxDay.setHours(0,0,0,0);
+  const mesAtual=maxDay.getMonth();
+  const anoAtual=maxDay.getFullYear();
+    const hoje=Date.now();
   const mesAnteriorDate=new Date(anoAtual,mesAtual-1,1);
 
   const ontemOk=ok.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime();});
@@ -1145,7 +1150,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         {hasMove&&<span style={{background:"rgba(59,130,246,0.1)",color:"#60a5fa",padding:"2px 7px",borderRadius:4,fontSize:9,border:"1px solid rgba(59,130,246,0.2)"}}>Move</span>}
       </div>
       {/* ── BRIEFING DIÁRIO ─────────────────────────────────────────── */}
-      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} ok={ok} maxDay={maxDay} maxTs={maxTs} mesAtual={mesAtual} anoAtual={anoAtual} maxData={maxDate} />
+      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} />
 
             {/* TERMÔMETRO NEON — Receita Hoje vs Mês */}
       {(()=>{
