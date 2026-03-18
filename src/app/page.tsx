@@ -413,16 +413,24 @@ function parseBaseMestre(text: string): Record<string, BaseMestreUsuario> {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return {};
   const result: Record<string, BaseMestreUsuario> = {};
+  const sep = lines[0].includes(";") ? ";" : ",";
+  const hdr = lines[0].split(sep).map(h => h.replace(/"/g, "").trim().toLowerCase());
+  const iNome = hdr.findIndex(h => h.includes("usu") || h.includes("nome"));
+  const iEmail = hdr.findIndex(h => h.includes("mail"));
+  const iTel = hdr.findIndex(h => /telefone|celular|tel|fone/.test(h));
+  if (iNome < 0 || iTel < 0) return {};
   for (let i = 1; i < lines.length; i++) {
-    let line = lines[i].trim();
-    if (line.startsWith('"')) line = line.slice(1);
-    if (line.endsWith('"')) line = line.slice(0, -1);
-    line = line.replace(/""/g, "\x00");
-    const cols = line.split(",\x00").map(c => c.replace(/\x00/g, "").replace(/^"|"$/g, "").trim());
-    if (cols.length < 4) continue;
-    const nome = cols[0].trim();
-    const email = cols[1]?.trim() || "";
-    const tel = cols[3]?.replace(/\D/g, "") || "";
+    const cols: string[] = [];
+    let cur = "", inQ = false;
+    for (const c of lines[i]) {
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === sep && !inQ) { cols.push(cur.trim()); cur = ""; continue; }
+      cur += c;
+    }
+    cols.push(cur.trim());
+    const nome = cols[iNome]?.trim() || "";
+    const email = iEmail >= 0 ? (cols[iEmail]?.trim() || "") : "";
+    const tel = (cols[iTel]?.trim() || "").replace(/\D/g, "");
     if (!nome) continue;
     result[nome.toLowerCase()] = {
       nome, email, telefone: tel,
