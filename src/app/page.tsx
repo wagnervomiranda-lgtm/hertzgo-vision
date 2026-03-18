@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -677,7 +678,7 @@ function KpiCard({label,value,sub,accent="#00e5a0",small}:{label:string;value:st
     </div>
   );
 }
-function SectionLabel({children}:{children:string}){
+function SectionLabel({children}:{children:React.ReactNode}){
   return(
     <div style={{display:"flex",alignItems:"center",gap:10,fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.18em",textTransform:"uppercase" as const,margin:"24px 0 12px"}}>
       {children}<div style={{flex:1,height:1,background:T.border}}/>
