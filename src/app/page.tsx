@@ -118,7 +118,7 @@ interface AppState {
   userOverrides: Record<string, UserOverride>;
   limiteDisparoDiario: number;
 }
-type Tab = "dash" | "dre" | "usuarios" | "acoes" | "config" | "relatorio";
+type Tab = "dash" | "dre" | "usuarios" | "acoes" | "config" | "relatorio" | "goals";
 
 // ─── ESTAÇÕES ────────────────────────────────────────────────────────────────
 const ESTACAO_MAP: Record<string, string> = {
@@ -3128,6 +3128,215 @@ function TabRelatorio({sessions,appState,onAddSessions}:{sessions:Session[];appS
 }
 
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
+// ─── TAB GOALS & INTELIGÊNCIA ────────────────────────────────────────────────
+function TabGoals({sessions,appState}:{sessions:Session[];appState:AppState}){
+  const isMobile=useIsMobile();
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0&&s.value>0);
+  const pad=isMobile?"16px 14px":"24px 28px";
+
+  const allTs=ok.map(s=>s.date.getTime());
+  const maxTs=allTs.length?Math.max(...allTs):Date.now();
+  const maxDay=new Date(maxTs);maxDay.setHours(0,0,0,0);
+  const mesAtual=maxDay.getMonth();
+  const anoAtual=maxDay.getFullYear();
+  const mesAnteriorDate=new Date(anoAtual,mesAtual-1,1);
+
+  const mauAtual=new Set(ok.filter(s=>s.date.getMonth()===mesAtual&&s.date.getFullYear()===anoAtual).map(s=>s.user)).size;
+  const mauAnterior=new Set(ok.filter(s=>s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear()).map(s=>s.user)).size;
+  const mauDelta=mauAtual-mauAnterior;
+  const todosUsers=Array.from(new Set(ok.map(s=>s.user)));
+
+  const primeiraRecarga:Record<string,number>={};
+  ok.forEach(s=>{if(!primeiraRecarga[s.user]||s.date.getTime()<primeiraRecarga[s.user])primeiraRecarga[s.user]=s.date.getTime();});
+  const novosEsteMes=todosUsers.filter(u=>{const d=new Date(primeiraRecarga[u]);return d.getMonth()===mesAtual&&d.getFullYear()===anoAtual;}).length;
+
+  const ativosAnterior=new Set(ok.filter(s=>s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear()).map(s=>s.user));
+  const ativosAtual=new Set(ok.filter(s=>s.date.getMonth()===mesAtual&&s.date.getFullYear()===anoAtual).map(s=>s.user));
+  const churnedEsteMes=Array.from(ativosAnterior).filter(u=>!ativosAtual.has(u)).length;
+  const taxaChurn=mauAnterior>0?(churnedEsteMes/mauAnterior*100):0;
+  const taxaRetencao=mauAnterior>0?((mauAnterior-churnedEsteMes)/mauAnterior*100):100;
+
+  const userStats:Record<string,{rev:number;sess:number;firstTs:number;lastTs:number}>={};
+  ok.forEach(s=>{
+    if(!userStats[s.user])userStats[s.user]={rev:0,sess:0,firstTs:s.date.getTime(),lastTs:s.date.getTime()};
+    userStats[s.user].rev+=s.value;userStats[s.user].sess++;
+    if(s.date.getTime()<userStats[s.user].firstTs)userStats[s.user].firstTs=s.date.getTime();
+    if(s.date.getTime()>userStats[s.user].lastTs)userStats[s.user].lastTs=s.date.getTime();
+  });
+
+  const usuarios=classificarUsuarios(ok);
+  const motoristas=usuarios.filter(u=>u.isMotorista);
+  const heavys=usuarios.filter(u=>u.isHeavy&&!u.isMotorista);
+  const shoppers=usuarios.filter(u=>!u.isMotorista&&!u.isHeavy&&!u.isParceiro);
+
+  const calcLTV=(users:UserData[])=>{
+    if(users.length===0)return{real:0,proj:0,ticket:0,freqMes:0};
+    const stats=users.map(u=>userStats[u.user]).filter(Boolean);
+    const revTotal=stats.reduce((a,s)=>a+s.rev,0);
+    const sessTotal=stats.reduce((a,s)=>a+s.sess,0);
+    const ticket=sessTotal>0?revTotal/sessTotal:0;
+    const periodoMeses=Math.max(1,(maxTs-Math.min(...stats.map(s=>s.firstTs)))/2592000000);
+    const freqMes=sessTotal/(users.length*periodoMeses);
+    return{real:revTotal/users.length,proj:ticket*freqMes*12,ticket,freqMes};
+  };
+  const ltvM=calcLTV(motoristas),ltvH=calcLTV(heavys),ltvS=calcLTV(shoppers);
+
+  const revSeg=(seg:UserData[])=>ok.filter(s=>s.date.getMonth()===mesAtual&&s.date.getFullYear()===anoAtual&&seg.some(u=>u.user===s.user)).reduce((a,s)=>a+s.value,0);
+  const revMot=revSeg(motoristas),revHvy=revSeg(heavys),revShp=revSeg(shoppers);
+  const revTot=revMot+revHvy+revShp||1;
+
+  const hubsAll=Array.from(new Set(ok.map(s=>s.hubKey)));
+  const mauHub=hubsAll.map(h=>{
+    const m=new Set(ok.filter(s=>s.hubKey===h&&s.date.getMonth()===mesAtual&&s.date.getFullYear()===anoAtual).map(s=>s.user)).size;
+    const ma=new Set(ok.filter(s=>s.hubKey===h&&s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear()).map(s=>s.user)).size;
+    return{hub:h,mau:m,delta:m-ma};
+  }).sort((a,b)=>b.mau-a.mau);
+
+  const churnRisco=todosUsers.map(u=>{
+    const s=userStats[u];if(!s)return null;
+    const dias=Math.round((maxTs-s.lastTs)/86400000);
+    const score=dias>21?"crit":dias>14?"warn":dias>7?"watch":"ok";
+    if(score==="ok")return null;
+    const seg=motoristas.find(m=>m.user===u)?"Motorista":heavys.find(h=>h.user===u)?"Heavy":"Shopper";
+    return{user:u,dias,score,seg,rev:s.rev,sess:s.sess};
+  }).filter(Boolean).sort((a,b)=>b!.dias-a!.dias) as {user:string;dias:number;score:string;seg:string;rev:number;sess:number}[];
+
+  const mesNome=maxDay.toLocaleDateString("pt-BR",{month:"long"});
+  const sCol=(s:string)=>s==="crit"?T.red:s==="warn"?T.amber:s==="watch"?"#fb923c":T.green;
+  const sLbl=(s:string)=>s==="crit"?"🔴 Crítico":s==="warn"?"🟡 Atenção":s==="watch"?"🟠 Observar":"🟢 Ativo";
+
+  return(
+    <div style={{padding:pad}}>
+      <SectionLabel>Base Ativa — {mesNome}</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:24}}>
+        <KpiCard label="MAU" value={`${mauAtual}`} sub={`${mauDelta>=0?"+":""}${mauDelta} vs mês ant.`} accent={mauDelta>=0?T.green:T.red}/>
+        <KpiCard label="Novos" value={`${novosEsteMes}`} sub="1ª recarga este mês" accent={T.teal}/>
+        <KpiCard label="Churn" value={`${churnedEsteMes}`} sub={`${taxaChurn.toFixed(1)}% da base`} accent={churnedEsteMes>0?T.amber:T.green}/>
+        <KpiCard label="Retenção" value={`${taxaRetencao.toFixed(0)}%`} sub="vs mês anterior" accent={taxaRetencao>=80?T.green:taxaRetencao>=60?T.amber:T.red}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:24}}>
+        <Panel>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:16}}>📈 Crescimento da Base</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:10}}>
+            <div style={{flex:novosEsteMes||1,height:28,background:`${T.green}25`,borderRadius:"6px 0 0 6px",display:"flex",alignItems:"center",justifyContent:"center",minWidth:40}}>
+              <span style={{fontFamily:T.mono,fontSize:11,color:T.green,fontWeight:700}}>+{novosEsteMes}</span>
+            </div>
+            <div style={{flex:churnedEsteMes||1,height:28,background:`${T.red}25`,borderRadius:"0 6px 6px 0",display:"flex",alignItems:"center",justifyContent:"center",minWidth:40}}>
+              <span style={{fontFamily:T.mono,fontSize:11,color:T.red,fontWeight:700}}>-{churnedEsteMes}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:14}}>
+            <span style={{color:T.green}}>✅ Novos</span>
+            <span style={{color:T.red}}>❌ Não voltaram</span>
+          </div>
+          <div style={{background:T.bg3,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between"}}>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Saldo · <span style={{color:mauDelta>=0?T.green:T.red,fontWeight:700}}>{mauDelta>=0?"+":""}{mauDelta}</span></div>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Histórico · <span style={{color:T.text,fontWeight:700}}>{todosUsers.length}</span></div>
+          </div>
+        </Panel>
+        <Panel>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>🏪 MAU por Estação</div>
+          {mauHub.map(h=>(
+            <div key={h.hub} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>{trunc(hubNome(h.hub),16)}</span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontFamily:T.mono,fontSize:11,color:T.text,fontWeight:700}}>{h.mau}</span>
+                  {h.delta!==0&&<span style={{fontFamily:T.mono,fontSize:9,color:h.delta>0?T.green:T.red}}>{h.delta>0?"+":""}{h.delta}</span>}
+                </div>
+              </div>
+              <div style={{height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${mauHub[0].mau>0?(h.mau/mauHub[0].mau*100):0}%`,background:T.green,borderRadius:2}}/>
+              </div>
+            </div>
+          ))}
+        </Panel>
+      </div>
+
+      <SectionLabel>LTV — Valor por Usuário</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:24}}>
+        {[{seg:"Motorista",cor:T.red,qtd:motoristas.length,ltv:ltvM},{seg:"Heavy",cor:T.amber,qtd:heavys.length,ltv:ltvH},{seg:"Shopper",cor:T.green,qtd:shoppers.length,ltv:ltvS}].map(s=>(
+          <div key={s.seg} style={{background:T.bg2,border:`1px solid ${s.cor}30`,borderRadius:14,padding:"16px",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:s.cor}}/>
+            <div style={{fontFamily:T.mono,fontSize:9,color:s.cor,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:4}}>{s.seg} · {s.qtd}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <div style={{background:T.bg3,borderRadius:8,padding:"8px 10px"}}>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:3}}>LTV Real</div>
+                <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:s.cor}}>{brl(s.ltv.real)}</div>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>gasto médio</div>
+              </div>
+              <div style={{background:T.bg3,borderRadius:8,padding:"8px 10px"}}>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:3}}>Proj. 12m</div>
+                <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:T.text}}>{brl(s.ltv.proj)}</div>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>potencial anual</div>
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2}}>
+              <span>Ticket <strong style={{color:T.text}}>{brl(s.ltv.ticket)}</strong></span>
+              <span>Freq <strong style={{color:T.text}}>{s.ltv.freqMes.toFixed(1)}x/mês</strong></span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <SectionLabel>Receita por Segmento — {mesNome}</SectionLabel>
+      <Panel style={{marginBottom:24}}>
+        {[{seg:"Motoristas",rev:revMot,cor:T.red,qtd:motoristas.length},{seg:"Heavy Users",rev:revHvy,cor:T.amber,qtd:heavys.length},{seg:"Shoppers",rev:revShp,cor:T.green,qtd:shoppers.length}].map(s=>(
+          <div key={s.seg} style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:8,height:8,borderRadius:2,background:s.cor}}/>
+                <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text}}>{s.seg}</span>
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>({s.qtd})</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{(s.rev/revTot*100).toFixed(0)}%</span>
+                <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:s.cor}}>{brl(s.rev)}</span>
+              </div>
+            </div>
+            <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${(s.rev/revTot*100)}%`,background:s.cor,borderRadius:3}}/>
+            </div>
+          </div>
+        ))}
+        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:11,color:T.text2}}>
+          <span>Total {mesNome}</span><span style={{color:T.green,fontWeight:700}}>{brl(revTot)}</span>
+        </div>
+      </Panel>
+
+      <SectionLabel>Churn Score — Usuários em Risco</SectionLabel>
+      {churnRisco.length===0?(
+        <Panel><div style={{textAlign:"center" as const,padding:"20px 0",fontFamily:T.mono,fontSize:12,color:T.green}}>✅ Nenhum usuário em risco</div></Panel>
+      ):(
+        <Panel>
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?380:undefined}}>
+              <thead><tr style={{background:T.bg3}}>
+                <th style={TH}>Usuário</th><th style={TH}>Segmento</th>
+                <th style={THR}>Dias</th><th style={THR}>LTV Real</th><th style={TH}>Status</th>
+              </tr></thead>
+              <tbody>
+                {churnRisco.slice(0,20).map(u=>{
+                  const cor=sCol(u.score);
+                  return(<tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                    <td style={TD}><div style={{fontWeight:500,fontSize:12}}>{trunc(u.user,isMobile?14:22)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.sess}x · {brl(u.rev)}</div></td>
+                    <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:`${u.seg==="Motorista"?T.red:u.seg==="Heavy"?T.amber:T.green}18`,color:u.seg==="Motorista"?T.red:u.seg==="Heavy"?T.amber:T.green}}>{u.seg}</span></td>
+                    <td style={{...TDR,color:cor,fontWeight:700,fontSize:12}}>{u.dias}d</td>
+                    <td style={{...TDR,color:T.text2,fontSize:11}}>{brl(u.rev)}</td>
+                    <td style={TD}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{sLbl(u.score)}</span></td>
+                  </tr>);
+                })}
+              </tbody>
+            </table>
+          </div>
+          {churnRisco.length>20&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,padding:"10px 0"}}>+{churnRisco.length-20} outros</div>}
+        </Panel>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   useFonts();
   usePWA();
@@ -3159,6 +3368,7 @@ export default function Home() {
     { id: "dre",      label: "DRE",       icon: "💼" },
     { id: "acoes",    label: "Ações",     icon: "📤" },
     { id: "relatorio",label: "Relatórios",icon: "📋" },
+    { id: "goals",    label: "Inteligência", icon: "🧠" },
     { id: "config",   label: "Config",    icon: "⚙️"  },
   ];
 
@@ -3287,6 +3497,7 @@ export default function Home() {
         {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
         {tab === "config"    && <TabConfig appState={appState} onSave={handleSave} />}
+        {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} />}
       </main>
 
       {/* ── BOTTOM NAV (MOBILE APENAS) ── */}
