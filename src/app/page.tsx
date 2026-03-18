@@ -118,6 +118,11 @@ interface AppState {
   baseMestre: Record<string, BaseMestreUsuario>;
   userOverrides: Record<string, UserOverride>;
   limiteDisparoDiario: number;
+  mercado: {
+    concorrentes: {nome:string;rede:string;precoKwh:number;tipo:string;lat?:number;lng?:number;atualizadoEm:string}[];
+    estacoesOCM: {nome:string;lat:number;lng:number;rede:string;tipo:string}[];
+    ocmAtualizadoEm: string;
+  };
 }
 type Tab = "dash" | "dre" | "acoes" | "config" | "relatorio" | "goals";
 
@@ -201,6 +206,7 @@ function defaultState(): AppState {
     disparos: [], zapi: { instanceId: "", token: "", clientToken: "" },
     cupons: [], estacoesCustom: [],
     baseMestre: {}, userOverrides: {}, limiteDisparoDiario: 20,
+    mercado: {concorrentes:[],estacoesOCM:[],ocmAtualizadoEm:""},
   };
 }
 function loadState(): AppState {
@@ -2836,7 +2842,7 @@ function TabRelatorio({sessions,appState,onAddSessions}:{sessions:Session[];appS
 
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
 // ─── TAB GOALS & INTELIGÊNCIA ────────────────────────────────────────────────
-function TabGoals({sessions,appState}:{sessions:Session[];appState:AppState}){
+function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppState;onSave:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0&&s.value>0);
   const pad=isMobile?"16px 14px":"24px 28px";
@@ -3302,6 +3308,246 @@ function TabGoals({sessions,appState}:{sessions:Session[];appState:AppState}){
       })()}
 
       {/* ── 4. ARGUMENTO COMERCIAL POR ESTAÇÃO ───────────────────────────── */}
+      {/* ── INTELIGÊNCIA DE PREÇOS ──────────────────────────────────────── */}
+      <SectionLabel>💰 Inteligência de Preços</SectionLabel>
+      {(()=>{
+        const concorrentes=appState.mercado?.concorrentes||[];
+        const meuPrecoMedio=ok.reduce((a,s)=>a+s.value,0)/Math.max(1,ok.reduce((a,s)=>a+s.energy,0));
+        const[novoConcorrente,setNovoConcorrente]=useState({nome:"",rede:"",precoKwh:0,tipo:"DC"});
+        const[salvandoConc,setSalvandoConc]=useState(false);
+
+        const adicionarConcorrente=()=>{
+          if(!novoConcorrente.nome||!novoConcorrente.precoKwh)return;
+          const updated=[...concorrentes,{...novoConcorrente,lat:undefined,lng:undefined,atualizadoEm:new Date().toISOString()}];
+          onSave({mercado:{...appState.mercado,concorrentes:updated}});
+          setNovoConcorrente({nome:"",rede:"",precoKwh:0,tipo:"DC"});
+          setSalvandoConc(true);setTimeout(()=>setSalvandoConc(false),1500);
+        };
+
+        const removerConcorrente=(i:number)=>{
+          const updated=concorrentes.filter((_:typeof concorrentes[0],j:number)=>j!==i);
+          onSave({mercado:{...appState.mercado,concorrentes:updated}});
+        };
+
+        const precoMedioConc=concorrentes.length>0?concorrentes.reduce((a:number,c:typeof concorrentes[0])=>a+c.precoKwh,0)/concorrentes.length:0;
+        const diffPct=precoMedioConc>0?((meuPrecoMedio-precoMedioConc)/precoMedioConc*100):0;
+        const posicao=diffPct>5?"acima da média":diffPct<-5?"abaixo da média":"na média";
+        const posicaoCor=diffPct>5?T.green:diffPct<-5?T.red:T.amber;
+
+        return(
+          <>
+            {/* Resumo posicionamento */}
+            {concorrentes.length>0&&(
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
+                {[
+                  {label:"Seu Preço Médio",val:`R$${meuPrecoMedio.toFixed(2)}/kWh`,cor:T.green},
+                  {label:"Média Concorrência",val:`R$${precoMedioConc.toFixed(2)}/kWh`,cor:T.text},
+                  {label:"Posicionamento",val:`${diffPct>0?"+":""}${diffPct.toFixed(1)}% ${posicao}`,cor:posicaoCor},
+                ].map((k,i)=>(
+                  <div key={i} style={{background:T.bg2,border:`1px solid ${k.cor}30`,borderRadius:12,padding:"12px 16px",position:"relative",overflow:"hidden"}}>
+                    <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,marginBottom:6}}>{k.label}</div>
+                    <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:k.cor}}>{k.val}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Tabela concorrentes */}
+            {concorrentes.length>0&&(
+              <Panel style={{marginBottom:16}}>
+                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Concorrentes monitorados</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead><tr style={{background:T.bg3}}>
+                      <th style={TH}>Estação</th><th style={TH}>Rede</th><th style={TH}>Tipo</th>
+                      <th style={THR}>R$/kWh</th><th style={THR}>vs Meu</th><th style={TH}>Atualizado</th><th style={TH}></th>
+                    </tr></thead>
+                    <tbody>
+                      {concorrentes.map((c:typeof concorrentes[0],i:number)=>{
+                        const diff=meuPrecoMedio-c.precoKwh;
+                        const diffCor=diff>0?T.green:diff<0?T.red:T.amber;
+                        return(
+                          <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                            <td style={TD}><span style={{fontSize:12,fontWeight:500}}>{c.nome}</span></td>
+                            <td style={{...TD,color:T.text2,fontSize:11}}>{c.rede||"—"}</td>
+                            <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:`${T.border}`,color:T.text2}}>{c.tipo}</span></td>
+                            <td style={{...TDR,color:T.text,fontWeight:700}}>R${c.precoKwh.toFixed(2)}</td>
+                            <td style={{...TDR,color:diffCor,fontSize:11}}>{diff>0?"+":""}{diff.toFixed(2)}</td>
+                            <td style={{...TD,fontSize:10,color:T.text3}}>{new Date(c.atualizadoEm).toLocaleDateString("pt-BR")}</td>
+                            <td style={TDR}><button onClick={()=>removerConcorrente(i)} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",color:T.red,padding:"3px 8px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:T.mono}}>×</button></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
+            )}
+
+            {/* Formulário novo concorrente */}
+            <Panel style={{marginBottom:24}}>
+              <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,marginBottom:10}}>➕ Adicionar concorrente</div>
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:10}}>
+                {[
+                  {label:"Nome da Estação",key:"nome",type:"text"},
+                  {label:"Rede (Spott/Move)",key:"rede",type:"text"},
+                  {label:"Preço R$/kWh",key:"precoKwh",type:"number"},
+                  {label:"Tipo",key:"tipo",type:"select"},
+                ].map(f=>(
+                  <div key={f.key}>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,marginBottom:3}}>{f.label}</div>
+                    {f.type==="select"?(
+                      <select value={novoConcorrente.tipo} onChange={e=>setNovoConcorrente(p=>({...p,tipo:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"7px 9px",borderRadius:8,fontSize:12,fontFamily:T.mono,boxSizing:"border-box" as const}}>
+                        <option>DC</option><option>AC</option><option>DC+AC</option>
+                      </select>
+                    ):(
+                      <input type={f.type} value={(novoConcorrente as Record<string,string|number>)[f.key]} placeholder={f.label} onChange={e=>setNovoConcorrente(p=>({...p,[f.key]:f.type==="number"?+e.target.value:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"7px 9px",borderRadius:8,fontSize:12,fontFamily:T.mono,boxSizing:"border-box" as const}}/>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button onClick={adicionarConcorrente} style={{background:salvandoConc?"rgba(0,229,160,0.2)":T.greenDim,border:`1px solid ${salvandoConc?T.green:"rgba(0,229,160,0.3)"}`,color:T.green,padding:"8px 18px",borderRadius:8,fontSize:12,cursor:"pointer",fontFamily:T.mono}}>
+                {salvandoConc?"✅ Adicionado!":"💾 Salvar"}
+              </button>
+            </Panel>
+          </>
+        );
+      })()}
+
+      {/* ── MAPA DE OPORTUNIDADES ─────────────────────────────────────────── */}
+      <SectionLabel>🗺️ Mapa de Oportunidades — Brasília</SectionLabel>
+      {(()=>{
+        const[buscandoOCM,setBuscandoOCM]=useState(false);
+        const[ocmErro,setOcmErro]=useState("");
+        const estacoesOCM=appState.mercado?.estacoesOCM||[];
+        const ocmAtualizado=appState.mercado?.ocmAtualizadoEm;
+
+        const buscarOCM=async()=>{
+          setBuscandoOCM(true);setOcmErro("");
+          try{
+            // Open Charge Map API — gratuita, sem autenticação necessária para uso básico
+            // Brasília: lat -15.7801, lng -47.9292, raio 50km
+            const res=await fetch("https://api.openchargemap.io/v3/poi/?output=json&countrycode=BR&latitude=-15.7801&longitude=-47.9292&distance=50&distanceunit=km&maxresults=200&compact=true&verbose=false");
+            if(!res.ok)throw new Error("Erro na API");
+            const data=await res.json();
+            const estacoes=data.map((e:Record<string,unknown>)=>({
+              nome:(e.AddressInfo as Record<string,unknown>)?.Title as string||"Sem nome",
+              lat:(e.AddressInfo as Record<string,unknown>)?.Latitude as number||0,
+              lng:(e.AddressInfo as Record<string,unknown>)?.Longitude as number||0,
+              rede:((e.OperatorInfo as Record<string,unknown>)?.Title as string)||"Desconhecida",
+              tipo:((e.Connections as Record<string,unknown>[])?.[0] as Record<string,unknown>)?.ConnectionType?.Title as string||"AC",
+            }));
+            onSave({mercado:{...appState.mercado,estacoesOCM:estacoes,ocmAtualizadoEm:new Date().toISOString()}});
+            setBuscandoOCM(false);
+          }catch(e){
+            setOcmErro("Erro ao buscar dados. Tente novamente.");
+            setBuscandoOCM(false);
+          }
+        };
+
+        // Calcular densidade por região (grid simplificado)
+        const minhasPosicoes=[
+          {nome:"Park Way",lat:-15.8674,lng:-47.9869},
+          {nome:"Cidade do Automóvel",lat:-15.8274,lng:-47.9369},
+          {nome:"Costa Atacadão",lat:-15.8374,lng:-48.0469},
+        ];
+
+        // Redes mais presentes
+        const redesCount:Record<string,number>={};
+        estacoesOCM.forEach((e:typeof estacoesOCM[0])=>{redesCount[e.rede]=(redesCount[e.rede]||0)+1;});
+        const topRedes=Object.entries(redesCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+        return(
+          <>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>
+                  {estacoesOCM.length>0?`${estacoesOCM.length} estações encontradas em Brasília`:"Dados não carregados"}
+                </div>
+                {ocmAtualizado&&<div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>Atualizado: {new Date(ocmAtualizado).toLocaleDateString("pt-BR")}</div>}
+              </div>
+              <button onClick={buscarOCM} disabled={buscandoOCM} style={{padding:"8px 18px",borderRadius:10,fontFamily:T.sans,fontSize:12,fontWeight:600,cursor:"pointer",background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green}}>
+                {buscandoOCM?"⏳ Buscando...":"🔄 Buscar Estações de Brasília"}
+              </button>
+            </div>
+            {ocmErro&&<div style={{fontFamily:T.mono,fontSize:11,color:T.red,marginBottom:12}}>{ocmErro}</div>}
+
+            {estacoesOCM.length>0&&(
+              <>
+                {/* KPIs do mercado */}
+                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
+                  {[
+                    {label:"Estações no DF",val:`${estacoesOCM.length}`,cor:T.blue},
+                    {label:"Suas Estações",val:`${minhasPosicoes.length}`,cor:T.green},
+                    {label:"Market Share",val:`${(minhasPosicoes.length/Math.max(1,estacoesOCM.length)*100).toFixed(1)}%`,cor:T.teal},
+                    {label:"Redes Ativas",val:`${Object.keys(redesCount).length}`,cor:T.amber},
+                  ].map((k,i)=>(
+                    <div key={i} style={{background:T.bg2,border:`1px solid ${k.cor}25`,borderRadius:12,padding:"12px 16px",position:"relative",overflow:"hidden"}}>
+                      <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
+                      <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,marginBottom:6}}>{k.label}</div>
+                      <div style={{fontFamily:T.sans,fontSize:22,fontWeight:800,color:k.cor}}>{k.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Top redes concorrentes */}
+                <Panel style={{marginBottom:16}}>
+                  <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>Principais redes no DF</div>
+                  {topRedes.map(([rede,qtd])=>(
+                    <div key={rede} style={{marginBottom:10}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                        <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>{trunc(rede,24)}</span>
+                        <span style={{fontFamily:T.mono,fontSize:11,color:T.text,fontWeight:700}}>{qtd} estações</span>
+                      </div>
+                      <div style={{height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${(qtd/estacoesOCM.length*100)}%`,background:T.blue,borderRadius:2}}/>
+                      </div>
+                    </div>
+                  ))}
+                </Panel>
+
+                {/* Lista estações próximas às suas */}
+                <Panel style={{marginBottom:24}}>
+                  <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Concorrentes próximos às suas estações</div>
+                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:12}}>Estações de outras redes no raio de 5km</div>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
+                      <thead><tr style={{background:T.bg3}}>
+                        <th style={TH}>Estação</th><th style={TH}>Rede</th><th style={TH}>Tipo</th><th style={THR}>Dist.</th>
+                      </tr></thead>
+                      <tbody>
+                        {estacoesOCM.flatMap((e:typeof estacoesOCM[0])=>
+                          minhasPosicoes.map(m=>{
+                            const dist=Math.sqrt(Math.pow((e.lat-m.lat)*111,2)+Math.pow((e.lng-m.lng)*92,2));
+                            return dist<5?{...e,distKm:dist.toFixed(1),minhaEstacao:m.nome}:null;
+                          })
+                        ).filter(Boolean).sort((a:Record<string,unknown>|null,b:Record<string,unknown>|null)=>+(a?.distKm||99)- +(b?.distKm||99)).slice(0,10).map((e:Record<string,unknown>|null,i:number)=>(
+                          <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                            <td style={TD}><div style={{fontSize:12,fontWeight:500}}>{trunc(e?.nome as string||"",isMobile?14:22)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>perto de {e?.minhaEstacao as string}</div></td>
+                            <td style={{...TD,fontSize:11,color:T.text2}}>{trunc(e?.rede as string||"",12)}</td>
+                            <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:T.border,color:T.text2}}>{e?.tipo as string}</span></td>
+                            <td style={{...TDR,color:T.amber,fontSize:11}}>{e?.distKm as string}km</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              </>
+            )}
+
+            {estacoesOCM.length===0&&!buscandoOCM&&(
+              <Panel style={{marginBottom:24}}>
+                <div style={{textAlign:"center" as const,padding:"20px",fontFamily:T.mono,fontSize:11,color:T.text3}}>
+                  Clique em "Buscar Estações de Brasília" para carregar os dados do mercado
+                </div>
+              </Panel>
+            )}
+          </>
+        );
+      })()}
+
       <SectionLabel>🤝 Argumento Comercial por Estação</SectionLabel>
       {(()=>{
         const hubsAll=Array.from(new Set(ok.map(s=>s.hubKey)));
@@ -3517,7 +3763,7 @@ export default function Home() {
         {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
         {tab === "config"    && <TabConfig appState={appState} onSave={handleSave} />}
-        {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} />}
+        {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} onSave={handleSave} />}
       </main>
 
       {/* ── BOTTOM NAV (MOBILE APENAS) ── */}
