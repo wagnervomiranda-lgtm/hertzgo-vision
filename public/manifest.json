@@ -1,23 +1,13 @@
 {
   "name": "HertzGo Vision",
   "short_name": "HertzGo",
-  "description": "Painel Operacional da Rede de Eletropostos HertzGo",
+  "description": "Dashboard operacional de eletropostos HertzGo",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080b10",
-  "theme_color": "#00e676",
+  "theme_color": "#00e5a0",
   "orientation": "portrait-primary",
   "icons": [
-    {
-      "src": "/icon-16.png",
-      "sizes": "16x16",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon-32.png",
-      "sizes": "32x32",
-      "type": "image/png"
-    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
@@ -29,8 +19,14 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
-  "categories": ["business", "productivity"],
+  "categories": ["business", "utilities"],
   "lang": "pt-BR"
 }

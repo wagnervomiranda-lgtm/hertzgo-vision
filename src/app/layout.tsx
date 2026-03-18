@@ -1,8 +1,26 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "HertzGo · Painel Operacional",
-  description: "Dashboard HertzGo",
+  title: "HertzGo Vision",
+  description: "Dashboard operacional de eletropostos HertzGo",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "HertzGo",
+  },
+  icons: {
+    apple: "/icon-180.png",
+    icon: "/icon-192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#00e5a0",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -12,9 +30,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body style={{ margin: 0, padding: 0, background: "#050608" }}>
-        {children}
-      </body>
+      <head>
+        <link rel="apple-touch-icon" href="/icon-180.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="HertzGo" />
+      </head>
+      <body>{children}</body>
     </html>
   );
 }
