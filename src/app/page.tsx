@@ -1403,17 +1403,20 @@ function TabDRE({sessions,appState}:{sessions:Session[];appState:AppState}){
   return(
     <div style={{padding:pad}}>
       <SectionLabel>Health Score — Rede</SectionLabel>
-      {/* Health cards — scroll horizontal mobile */}
-      <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:8,WebkitOverflowScrolling:"touch",marginBottom:24}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?`repeat(${Math.min(allHealthScores.length,2)},1fr)`:`repeat(${Math.min(allHealthScores.length,6)},1fr)`,gap:10,marginBottom:24}}>
         {allHealthScores.map(({hub,hs:h})=>{
           const color=h.status==="saudavel"?T.green:h.status==="atencao"?T.amber:T.red;
           const emoji=h.status==="saudavel"?"🟢":h.status==="atencao"?"🟡":"🔴";
           return(
-            <div key={hub} onClick={()=>setStation(hub)} style={{background:`${color}06`,border:`1px solid ${color}${station===hub?"60":"25"}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",flexShrink:0,minWidth:isMobile?130:undefined,position:"relative",overflow:"hidden"}}>
+            <div key={hub} onClick={()=>setStation(hub)} style={{background:`${color}06`,border:`1px solid ${color}${station===hub?"60":"25"}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",position:"relative",overflow:"hidden"}}>
               <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:color}}/>
-              <div style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:T.text,marginBottom:6}}>{hubNome(hub)}</div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:20}}>{emoji}</span><div style={{fontFamily:T.sans,fontSize:24,fontWeight:800,color,lineHeight:1}}>{h.total}</div></div>
-              <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>/100</div>
+              <div style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:T.text,marginBottom:6,whiteSpace:"nowrap" as const,overflow:"hidden",textOverflow:"ellipsis"}}>{hubNome(hub)}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                <span style={{fontSize:18}}>{emoji}</span>
+                <div style={{fontFamily:T.sans,fontSize:26,fontWeight:800,color,lineHeight:1}}>{h.total}</div>
+                <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,alignSelf:"flex-end",marginBottom:2}}>/100</div>
+              </div>
+              <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,textTransform:"capitalize" as const}}>{h.status==="saudavel"?"saudável":h.status==="atencao"?"atenção":"crítico"}</div>
             </div>
           );
         })}
@@ -3100,6 +3103,259 @@ function TabGoals({sessions,appState}:{sessions:Session[];appState:AppState}){
           </>
         );
       })()}
+
+      {/* ── 1. RESULTADOS DAS CAMPANHAS ──────────────────────────────────── */}
+      <SectionLabel>📊 Resultados das Campanhas</SectionLabel>
+      {(()=>{
+        const disparos=appState.disparos||[];
+        const enviados=disparos.filter(d=>d.status==="ok");
+        if(enviados.length===0)return(
+          <Panel style={{marginBottom:24}}><div style={{textAlign:"center" as const,padding:"20px",fontFamily:T.mono,fontSize:11,color:T.text3}}>Nenhum disparo registrado ainda</div></Panel>
+        );
+        // Cruzar disparos com sessões posteriores
+        const convertidos=enviados.filter(d=>{
+          const tsDisparo=new Date(d.ts).getTime();
+          return ok.some(s=>s.user===d.nome&&s.date.getTime()>tsDisparo);
+        });
+        // respostas são processadas via webhook — usar disparos como proxy
+        const responderam=enviados.filter(d=>ok.some(s=>s.user===d.nome)).length;
+        const taxaResposta=enviados.length>0?(responderam/enviados.length*100):0;
+        const taxaConversao=enviados.length>0?(convertidos.length/enviados.length*100):0;
+        // Tempo médio de retorno
+        const temposRetorno=convertidos.map(d=>{
+          const tsDisparo=new Date(d.ts).getTime();
+          const primeiraApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>tsDisparo).sort((a,b)=>a.date.getTime()-b.date.getTime())[0];
+          return primeiraApos?(primeiraApos.date.getTime()-tsDisparo)/86400000:null;
+        }).filter(Boolean) as number[];
+        const tempoMedio=temposRetorno.length>0?temposRetorno.reduce((a,b)=>a+b,0)/temposRetorno.length:0;
+        // Receita gerada pós-campanha
+        const receitaPos=convertidos.reduce((a,d)=>{
+          const tsDisparo=new Date(d.ts).getTime();
+          return a+ok.filter(s=>s.user===d.nome&&s.date.getTime()>tsDisparo).reduce((b,s)=>b+s.value,0);
+        },0);
+        return(
+          <>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
+              {[
+                {label:"Enviados",val:`${enviados.length}`,sub:"total de disparos",cor:T.text},
+                {label:"Convertidos",val:`${convertidos.length}`,sub:`${taxaConversao.toFixed(0)}% voltaram a carregar`,cor:T.green},
+                {label:"Tempo Médio",val:tempoMedio>0?`${tempoMedio.toFixed(1)}d`:"—",sub:"dias até retornar",cor:T.amber},
+                {label:"Receita Gerada",val:brl(receitaPos),sub:"pós-campanha",cor:T.teal},
+              ].map((k,i)=>(
+                <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
+                  <div style={{fontFamily:T.sans,fontSize:22,fontWeight:800,color:k.cor,marginBottom:4}}>{k.val}</div>
+                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{k.sub}</div>
+                </div>
+              ))}
+            </div>
+            {/* Top convertidos */}
+            {convertidos.length>0&&(
+              <Panel style={{marginBottom:24}}>
+                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>✅ Usuários que retornaram após contato</div>
+                <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
+                  {convertidos.slice(0,5).map(d=>{
+                    const tsDisparo=new Date(d.ts).getTime();
+                    const sessApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>tsDisparo);
+                    const receitaU=sessApos.reduce((a,s)=>a+s.value,0);
+                    const diasRet=sessApos.length>0?Math.round((sessApos[0].date.getTime()-tsDisparo)/86400000):0;
+                    return(
+                      <div key={d.ts+d.nome} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg3,borderRadius:8,border:"1px solid rgba(0,229,160,0.15)"}}>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:500,color:T.text}}>{trunc(d.nome,isMobile?16:28)}</div>
+                          <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>retornou em {diasRet}d · {sessApos.length} sess</div>
+                        </div>
+                        <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>{brl(receitaU)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Panel>
+            )}
+          </>
+        );
+      })()}
+
+      {/* ── 2. MELHOR HORÁRIO DE DISPARO ─────────────────────────────────── */}
+      <SectionLabel>⏰ Melhor Horário de Disparo</SectionLabel>
+      {(()=>{
+        // Calcular taxa de resposta por hora de início de sessão
+        const horaDist=Array(24).fill(0).map(()=>({sess:0,rev:0}));
+        ok.forEach(s=>{if(s.startHour!==null){horaDist[s.startHour].sess++;horaDist[s.startHour].rev+=s.value;}});
+        const maxSess=Math.max(...horaDist.map(h=>h.sess),1);
+        // Motoristas por hora
+        const motoristasSet=new Set(classificarUsuarios(ok).filter(u=>u.isMotorista).map(u=>u.user));
+        const horaMotoristas=Array(24).fill(0);
+        ok.filter(s=>motoristasSet.has(s.user)).forEach(s=>{if(s.startHour!==null)horaMotoristas[s.startHour]++;});
+        const maxMot=Math.max(...horaMotoristas,1);
+        // Top 3 horas
+        const topHoras=horaDist.map((h,i)=>({hora:i,sess:h.sess,mot:horaMotoristas[i]})).sort((a,b)=>b.mot-a.mot).slice(0,3);
+        return(
+          <Panel style={{marginBottom:24}}>
+            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Atividade dos motoristas por hora do dia</div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:14}}>
+              Melhores horários para disparar: {topHoras.map(h=>`${h.hora}h`).join(" · ")}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(24,1fr)",gap:2,marginBottom:4}}>
+              {horaMotoristas.map((mot,hr)=>{
+                const pct=maxMot>0?(mot/maxMot*100):0;
+                const isTop=topHoras.some(t=>t.hora===hr);
+                return(
+                  <div key={hr} title={`${hr}h: ${mot} motoristas`} style={{height:isMobile?32:44,borderRadius:4,background:isTop?`${T.green}`:pct>50?"rgba(0,229,160,0.35)":pct>20?"rgba(0,229,160,0.15)":"rgba(255,255,255,0.04)",display:"flex",alignItems:"flex-end",justifyContent:"center",position:"relative",cursor:"default"}}>
+                    {isTop&&<div style={{position:"absolute",top:2,width:"100%",textAlign:"center" as const,fontFamily:T.mono,fontSize:7,color:T.bg,fontWeight:700}}>★</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(24,1fr)",gap:2,marginBottom:14}}>
+              {Array.from({length:24},(_,hr)=>(<div key={hr} style={{fontSize:7,color:T.text3,textAlign:"center" as const,fontFamily:T.mono}}>{hr%6===0?`${hr}h`:""}</div>))}
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {topHoras.map(h=>(
+                <div key={h.hora} style={{background:"rgba(0,229,160,0.08)",border:"1px solid rgba(0,229,160,0.2)",borderRadius:10,padding:"8px 14px",display:"flex",gap:10,alignItems:"center"}}>
+                  <span style={{fontFamily:T.sans,fontSize:18,fontWeight:800,color:T.green}}>{h.hora}h</span>
+                  <div>
+                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{h.mot} motoristas ativos</div>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>horário ideal p/ disparo</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        );
+      })()}
+
+      {/* ── 3. PREVISÃO DE CHURN ─────────────────────────────────────────── */}
+      <SectionLabel>🔮 Previsão de Churn</SectionLabel>
+      {(()=>{
+        // Calcular frequência histórica por usuário e prever churn
+        const motoristasSetGoals=new Set(classificarUsuarios(ok).filter(u=>u.isMotorista).map(u=>u.user));
+        const previsoes=classificarUsuarios(ok).filter(u=>u.isMotorista||u.isHeavy).map(u=>{
+          const uSess=ok.filter(s=>s.user===u.user).sort((a,b)=>a.date.getTime()-b.date.getTime());
+          if(uSess.length<2)return null;
+          // Intervalo médio entre sessões
+          const intervalos:number[]=[];
+          for(let i=1;i<uSess.length;i++){
+            intervalos.push((uSess[i].date.getTime()-uSess[i-1].date.getTime())/86400000);
+          }
+          const intervaloMedio=intervalos.reduce((a,b)=>a+b,0)/intervalos.length;
+          const ultimaTs=uSess[uSess.length-1].date.getTime();
+          const diasSem=Math.round((maxTs-ultimaTs)/86400000);
+          // Probabilidade de churn baseada em desvio da frequência
+          const desvio=diasSem/intervaloMedio;
+          const probChurn=Math.min(100,Math.round((desvio-1)*50));
+          if(probChurn<20)return null; // só mostra quem tem risco real
+          const previsaoRetorno=new Date(ultimaTs+(intervaloMedio*86400000));
+          const atrasoDias=Math.max(0,diasSem-intervaloMedio);
+          return{
+            user:u.user,seg:u.isMotorista?"Motorista":"Heavy",
+            intervaloMedio:intervaloMedio.toFixed(1),
+            diasSem,probChurn,previsaoRetorno,atrasoDias:atrasoDias.toFixed(0),
+            ltv:ok.filter(s=>s.user===u.user).reduce((a,s)=>a+s.value,0),
+          };
+        }).filter(Boolean).sort((a,b)=>b!.probChurn-a!.probChurn) as {user:string;seg:string;intervaloMedio:string;diasSem:number;probChurn:number;previsaoRetorno:Date;atrasoDias:string;ltv:number}[];
+
+        if(previsoes.length===0)return(
+          <Panel style={{marginBottom:24}}><div style={{textAlign:"center" as const,padding:"20px",fontFamily:T.mono,fontSize:11,color:T.green}}>✅ Nenhum usuário com risco elevado de churn</div></Panel>
+        );
+        return(
+          <Panel style={{marginBottom:24}}>
+            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Probabilidade de não retornar baseada na frequência histórica</div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:14}}>Frequência esperada vs dias sem recarregar</div>
+            <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?420:undefined}}>
+                <thead><tr style={{background:T.bg3}}>
+                  <th style={TH}>Usuário</th>
+                  <th style={TH}>Segmento</th>
+                  <th style={THR}>Freq. média</th>
+                  <th style={THR}>Dias sem</th>
+                  <th style={THR}>Risco</th>
+                  <th style={THR}>LTV</th>
+                </tr></thead>
+                <tbody>
+                  {previsoes.slice(0,10).map(p=>{
+                    const cor=p.probChurn>=75?T.red:p.probChurn>=50?T.amber:"#fb923c";
+                    return(
+                      <tr key={p.user} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                        <td style={TD}><div style={{fontWeight:500,fontSize:12}}>{trunc(p.user,isMobile?14:22)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>esperado a cada {p.intervaloMedio}d</div></td>
+                        <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,padding:"2px 6px",borderRadius:4,background:p.seg==="Motorista"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:p.seg==="Motorista"?T.red:T.amber}}>{p.seg}</span></td>
+                        <td style={{...TDR,color:T.text2,fontSize:11}}>{p.intervaloMedio}d</td>
+                        <td style={{...TDR,color:cor,fontWeight:700}}>{p.diasSem}d</td>
+                        <td style={TDR}>
+                          <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                            <div style={{width:40,height:5,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
+                              <div style={{height:"100%",width:`${p.probChurn}%`,background:cor,borderRadius:3}}/>
+                            </div>
+                            <span style={{fontFamily:T.mono,fontSize:11,color:cor,fontWeight:700,minWidth:32}}>{p.probChurn}%</span>
+                          </div>
+                        </td>
+                        <td style={{...TDR,color:T.text2,fontSize:11}}>{brl(p.ltv)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {previsoes.length>10&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,padding:"10px 0"}}>+{previsoes.length-10} outros com risco elevado</div>}
+          </Panel>
+        );
+      })()}
+
+      {/* ── 4. ARGUMENTO COMERCIAL POR ESTAÇÃO ───────────────────────────── */}
+      <SectionLabel>🤝 Argumento Comercial por Estação</SectionLabel>
+      {(()=>{
+        const hubsAll=Array.from(new Set(ok.map(s=>s.hubKey)));
+        return(
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:24}}>
+            {hubsAll.map(h=>{
+              const hSess=ok.filter(s=>s.hubKey===h);
+              const totalSess=hSess.length;
+              const totalRev=hSess.reduce((a,s)=>a+s.value,0);
+              const usuarios=new Set(hSess.map(s=>s.user)).size;
+              const motoristasH=new Set(hSess.filter(s=>motoristasSetGoals.has(s.user)).map(s=>s.user)).size;
+              const ticketMedio=totalSess>0?totalRev/totalSess:0;
+              const datas=hSess.map(s=>s.date.getTime());
+              const diasOp=datas.length?Math.round((Math.max(...datas)-Math.min(...datas))/86400000)+1:1;
+              const revDia=totalRev/Math.max(1,diasOp);
+              const tipo=hubTipo(h,appState.estacoesCustom);
+              const tipoCor=tipo==="propria"?T.green:tipo==="parceria"?T.amber:T.blue;
+              const tipoLabel=tipo==="propria"?"🏠 Própria":tipo==="parceria"?"🤝 Parceria":"📋 Contratual";
+              return(
+                <div key={h} style={{background:T.bg2,border:`1px solid ${tipoCor}25`,borderRadius:14,padding:"16px",position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:tipoCor}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text}}>{hubNome(h)}</div>
+                      <span style={{fontFamily:T.mono,fontSize:9,color:tipoCor}}>{tipoLabel}</span>
+                    </div>
+                    <div style={{textAlign:"right" as const}}>
+                      <div style={{fontFamily:T.sans,fontSize:18,fontWeight:800,color:T.green}}>{brl(totalRev)}</div>
+                      <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>receita total</div>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                    {[
+                      {l:"Sessões",v:`${totalSess}`},
+                      {l:"Usuários",v:`${usuarios}`},
+                      {l:"Motoristas",v:`${motoristasH}`},
+                    ].map((k,i)=>(
+                      <div key={i} style={{background:T.bg3,borderRadius:8,padding:"8px 10px",textAlign:"center" as const}}>
+                        <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>{k.l}</div>
+                        <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text}}>{k.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{background:`${tipoCor}08`,border:`1px solid ${tipoCor}20`,borderRadius:8,padding:"8px 12px",fontFamily:T.mono,fontSize:10,color:T.text2,lineHeight:1.6}}>
+                    💬 <em>"{usuarios} clientes EV utilizaram este ponto em {diasOp} dias, com ticket médio de {brl(ticketMedio)} e receita de {brl(revDia)}/dia. {motoristasH} são motoristas profissionais."</em>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
