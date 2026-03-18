@@ -870,7 +870,7 @@ function TabDashboard({sessions,meta,onMetaChange}:{sessions:Session[];meta:numb
         const projMes=avgRevDia*diasNoMes;
 
         // Overstay ontem
-        const overstayOntem=ontemOk.filter(s=>s.overstayMin&&s.overstayMin>5);
+        const overstayOntem=ontemOk.filter(s=>s.overstayMin&&s.overstayMin>15); // alerta acima de 15min (início da cobrança)
 
         // Cancelamentos ontem
         const cancelOntem=sessions.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime()&&s.cancelled;});
@@ -892,7 +892,7 @@ function TabDashboard({sessions,meta,onMetaChange}:{sessions:Session[];meta:numb
           const revOntemH=hOntem.reduce((a,s)=>a+s.value,0);
           const abaixoMedia=temOntem&&revOntemH<avgRevH*0.6;
           const semMovimento=!temOntem;
-          const ovH=hOntem.filter(s=>s.overstayMin&&s.overstayMin>5);
+          const ovH=hOntem.filter(s=>s.overstayMin&&s.overstayMin>15);
           let status:"ok"|"warn"|"crit"="ok";
           if(semMovimento||abaixoMedia)status="warn";
           if(semMovimento&&avgSess>=5)status="crit";
@@ -911,6 +911,21 @@ function TabDashboard({sessions,meta,onMetaChange}:{sessions:Session[];meta:numb
 
         // Ações sugeridas
         const acoes:{icon:string;texto:string;tipo:"crm"|"op"|"info";cor:string}[]=[];
+        // Base Mestre vencida (>30 dias)
+        const baseMestreKeys=Object.keys(appState.baseMestre||{});
+        if(baseMestreKeys.length>0){
+          const ultimaImport=Object.values(appState.baseMestre)[0]?.importadoEm;
+          if(ultimaImport){
+            const diasBase=Math.round((hoje-new Date(ultimaImport).getTime())/86400000);
+            if(diasBase>30)acoes.push({icon:"📋",texto:`Base Mestre desatualizada (${diasBase} dias) — exportar CSV de usuários da Spott`,tipo:"op",cor:T.amber});
+          }
+        }else{
+          acoes.push({icon:"📋",texto:"Base Mestre vazia — importar CSV de usuários da Spott em Config → Contatos",tipo:"op",cor:T.amber});
+        }
+        // Novos usuários não cadastrados na base mestre
+        const nomesTransacoes=Array.from(new Set(allOk.map(s=>s.user)));
+        const semCadastro=nomesTransacoes.filter(n=>!appState.baseMestre[n.toLowerCase()]);
+        if(semCadastro.length>0)acoes.push({icon:"👤",texto:`${semCadastro.length} usuários nas transações sem cadastro — atualizar Base Mestre`,tipo:"info",cor:T.text2});
         if(motoristasRisco.length>0)acoes.push({icon:"🔴",texto:`${motoristasRisco.length} motoristas em risco — disparar MSG Risco`,tipo:"crm",cor:T.red});
         if(novosHoje.length>0)acoes.push({icon:"🌱",texto:`${novosHoje.length} novos usuários esta semana — enviar boas-vindas`,tipo:"crm",cor:T.teal});
         overstayOntem.forEach(s=>acoes.push({icon:"⏱️",texto:`Overstay: ${s.user} em ${hubNome(s.hubKey)} (${s.overstayMin}min)`,tipo:"op",cor:T.amber}));
@@ -1019,7 +1034,7 @@ function TabDashboard({sessions,meta,onMetaChange}:{sessions:Session[];meta:numb
                         </tr>
                       </thead>
                       <tbody>
-                        {saudeEstacoes.sort((a,b)=>b.revOntem-a.revOntem).map(e=>{
+                        {saudeEstacoes.sort((a,b)=>{const rA=mesAtualOk.filter(s=>s.hubKey===a.hub).reduce((x,s)=>x+s.value,0);const rB=mesAtualOk.filter(s=>s.hubKey===b.hub).reduce((x,s)=>x+s.value,0);return rB-rA;}).map(e=>{
                           const hMes=mesAtualOk.filter(s=>s.hubKey===e.hub);
                           const revHMes=hMes.reduce((a,s)=>a+s.value,0);
                           const kwhHMes=hMes.reduce((a,s)=>a+s.energy,0);
@@ -1612,7 +1627,7 @@ function TabDRE({sessions,appState}:{sessions:Session[];appState:AppState}){
 }
 
 // ─── TAB AÇÕES ───────────────────────────────────────────────────────────────
-function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void}){
+function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void;onSaveState:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
   const users=useMemo(()=>classificarUsuarios(ok),[ok]);
@@ -1620,21 +1635,71 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
   const[preview,setPreview]=useState<{user:string;hubK:string;msgId:string;template:string;cupom:string;tel:string;msg:string}|null>(null);
   const[respostas,setRespostas]=useState<{id:string;telefone:string;mensagem:string;resposta:string|null;criado_em:string}[]>([]);
   const[loadingResp,setLoadingResp]=useState(false);
-  const buscarRespostas=async()=>{
-    const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if(!url||!key)return;
-    setLoadingResp(true);
-    try{const res=await fetch(`${url}/rest/v1/webhook_respostas?order=criado_em.desc&limit=50`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});if(res.ok){const data=await res.json();setRespostas(data);}}
-    catch(e){console.error(e);}
-    setLoadingResp(false);
+  const[autoIdentificados,setAutoIdentificados]=useState<string[]>([]);
+  const[confirmModal,setConfirmModal]=useState<{msg:string;qtd:number;onConfirm:()=>void}|null>(null);
+  const[toastMsg,setToastMsg]=useState<string|null>(null);
+  const showToast=(msg:string)=>{setToastMsg(msg);setTimeout(()=>setToastMsg(null),4000);};
+
+  // Cruzar telefone com base mestre → identificar usuário
+  const cruzarTelefone=(tel:string):string|null=>{
+    const t=tel.replace(/\D/g,"");
+    const match=Object.values(appState.baseMestre).find(u=>{
+      const ut=u.telefone.replace(/\D/g,"");
+      return ut===t||ut.slice(-8)===t.slice(-8);
+    });
+    return match?.nome||null;
   };
+
   const marcarProcessado=async(id:string)=>{
     const url=process.env.NEXT_PUBLIC_SUPABASE_URL;const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if(!url||!key)return;
     await fetch(`${url}/rest/v1/webhook_respostas?id=eq.${id}`,{method:"PATCH",headers:{apikey:key,Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({processado:true})});
     setRespostas(r=>r.filter(x=>x.id!==id));
   };
+
+  const buscarRespostas=useCallback(async(silent=false)=>{
+    const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if(!url||!key)return;
+    if(!silent)setLoadingResp(true);
+    try{
+      const res=await fetch(`${url}/rest/v1/webhook_respostas?processado=eq.false&order=criado_em.desc&limit=50`,{headers:{apikey:key,Authorization:`Bearer ${key}`}});
+      if(res.ok){
+        const data=await res.json();
+        setRespostas(data);
+        // Auto-identificar e salvar overrides
+        const novosOverrides:Record<string,UserOverride>={};
+        const novosIds:string[]=[];
+        for(const r of data){
+          if(r.resposta!=="1"&&r.resposta!=="2")continue;
+          if(autoIdentificados.includes(r.id))continue;
+          const nome=cruzarTelefone(r.telefone);
+          if(!nome)continue;
+          novosOverrides[nome.toLowerCase()]={isMotorista:r.resposta==="1",atualizadoEm:new Date().toISOString(),fonte:"whatsapp"};
+          novosIds.push(r.id);
+          marcarProcessado(r.id);
+        }
+        if(Object.keys(novosOverrides).length>0){
+          onSaveState({userOverrides:{...appState.userOverrides,...novosOverrides}});
+          setAutoIdentificados(prev=>[...prev,...novosIds]);
+          const m=Object.values(novosOverrides).filter(v=>v.isMotorista===true).length;
+          const n=Object.values(novosOverrides).filter(v=>v.isMotorista===false).length;
+          const msgs:string[]=[];
+          if(m>0)msgs.push(`${m} motorista${m>1?"s":""} ✅`);
+          if(n>0)msgs.push(`${n} não motorista${n>1?"s":""}`);
+          showToast(`WhatsApp: ${msgs.join(" · ")} identificado${msgs.length>1?"s":""}`);
+        }
+      }
+    }catch(e){console.error(e);}
+    finally{if(!silent)setLoadingResp(false);}
+  },[autoIdentificados,appState.baseMestre,appState.userOverrides]);
+
+  // Auto-busca ao montar + polling 60s
+  useEffect(()=>{
+    buscarRespostas(true);
+    const iv=setInterval(()=>buscarRespostas(true),60000);
+    return()=>clearInterval(iv);
+  },[]);
   const[sending,setSending]=useState<Record<string,boolean>>({});
   const[localDisparos,setLocalDisparos]=useState(appState.disparos);
   const[expandedSection,setExpandedSection]=useState<string|null>("msg1");
@@ -1665,7 +1730,11 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
   const enviarLote=async(section:string,lista:UserData[],msgId:string,template:string,cupom:string="")=>{
     const sel=getSel(section);const elegíveis=lista.filter(u=>sel.has(u.user)&&getTel(u.user));
     if(!elegíveis.length){alert("Nenhum selecionado com telefone.");return;}
-    if(!confirm(`Disparar para ${elegíveis.length} usuários?`))return;
+    // Modal inline — não usa confirm() nativo
+    await new Promise<void>((resolve,reject)=>{
+      setConfirmModal({msg:`Disparar para ${elegíveis.length} usuário${elegíveis.length>1?"s":""}?`,qtd:elegíveis.length,onConfirm:()=>{setConfirmModal(null);resolve();}});
+      setTimeout(()=>{setConfirmModal(null);reject(new Error("timeout"));},30000);
+    }).catch(()=>{return;});
     setEnviandoLote(p=>({...p,[section]:true}));
     for(let i=0;i<elegíveis.length;i++){await enviarUm(elegíveis[i].user,elegíveis[i].localFreqKey,msgId,template,cupom);if(i<elegíveis.length-1)await new Promise(r=>setTimeout(r,3000));}
     setSelecionados(p=>({...p,[section]:[]}));setEnviandoLote(p=>({...p,[section]:false}));
@@ -1713,12 +1782,35 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
           </div>
         </div>
       )}
+      {/* TOAST */}
+      {toastMsg&&(
+        <div style={{position:"fixed",bottom:isMobile?80:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,background:"rgba(0,229,160,0.95)",color:T.bg,padding:"10px 20px",borderRadius:12,fontFamily:T.mono,fontSize:12,fontWeight:700,boxShadow:"0 4px 24px rgba(0,0,0,0.4)",whiteSpace:"nowrap",maxWidth:"90vw",textAlign:"center"}}>
+          ✅ {toastMsg}
+        </div>
+      )}
+      {/* MODAL CONFIRMAÇÃO INLINE */}
+      {confirmModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:9998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:20,padding:"28px 24px",maxWidth:360,width:"100%",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:12}}>🚀</div>
+            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Confirmar Disparo</div>
+            <div style={{fontFamily:T.mono,fontSize:12,color:T.text2,marginBottom:24,lineHeight:1.6}}>{confirmModal.msg}</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmModal(null)} style={{flex:1,padding:"12px",borderRadius:12,fontFamily:T.sans,fontSize:13,fontWeight:600,cursor:"pointer",background:"transparent",border:`1px solid ${T.border}`,color:T.text2}}>Cancelar</button>
+              <button onClick={confirmModal.onConfirm} style={{flex:2,padding:"12px",borderRadius:12,fontFamily:T.sans,fontSize:13,fontWeight:700,cursor:"pointer",background:T.green,color:T.bg,border:"none"}}>🚀 Disparar {confirmModal.qtd}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Respostas Z-API */}
       <div style={{marginBottom:20}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-          <div><div style={{fontFamily:T.sans,fontSize:15,fontWeight:700,color:T.text}}>📨 Respostas WhatsApp</div></div>
-          <button onClick={buscarRespostas} disabled={loadingResp} style={{padding:"7px 14px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:`1px solid ${T.green}40`,background:`${T.green}10`,color:T.green}}>
-            {loadingResp?"⏳":"🔄 Buscar"}
+          <div>
+            <div style={{fontFamily:T.sans,fontSize:15,fontWeight:700,color:T.text}}>📨 Respostas WhatsApp</div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginTop:2}}>{loadingResp?"⏳ buscando...":"🔄 automático · atualiza a cada 60s"}</div>
+          </div>
+          <button onClick={()=>buscarRespostas(false)} disabled={loadingResp} style={{padding:"5px 12px",borderRadius:8,fontFamily:T.mono,fontSize:10,cursor:"pointer",border:`1px solid ${T.border}`,background:"transparent",color:T.text3}}>
+            {loadingResp?"⏳":"↻ agora"}
           </button>
         </div>
         {respostas.length>0?(
@@ -1735,7 +1827,7 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
           </div>
         ):(
           <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center",fontFamily:T.mono,fontSize:11,color:T.text3}}>
-            Toque em "Buscar" para ver respostas via webhook
+            ✅ Sem respostas pendentes — monitorando automaticamente
           </div>
         )}
       </div>
@@ -1791,7 +1883,7 @@ function TabAcoes({sessions,appState,onSaveDisparos}:{sessions:Session[];appStat
         const iniciarDisparo=async()=>{
           if(fila.length===0){alert("Fila vazia.");return;}
           const{horarios}=calcHorarios(fila.length);
-          if(!confirm(`Disparar para ${fila.length} usuários?\nPrimeira mensagem: agora\nÚltima: ~${horarios[horarios.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}\nIntervalo: ${intervaloMin}–${intervaloMax} min entre cada`))return;
+          // disparo direto — confirmação já no botão principal
           setAutoStatus("running");setAutoIdx(0);setAutoTotal(fila.length);setAutoLog([]);pausedRef.current=false;
           const disparar=async(i:number)=>{
             if(i>=fila.length){setAutoStatus("done");return;}
@@ -2131,6 +2223,16 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
   const[zapiTestResult,setZapiTestResult]=useState("");
   const[dreStation,setDreStation]=useState("costa");
   const[dreSaved,setDreSaved]=useState(false);
+  // Auto-save DRE com debounce 2s
+  const autoSaveRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  useEffect(()=>{
+    if(autoSaveRef.current)clearTimeout(autoSaveRef.current);
+    autoSaveRef.current=setTimeout(()=>{
+      onSave({dreConfigs:{...appState.dreConfigs,[dreStation]:cfg}});
+      setDreSaved(true);setTimeout(()=>setDreSaved(false),2000);
+    },2000);
+    return()=>{if(autoSaveRef.current)clearTimeout(autoSaveRef.current);};
+  },[cfg]);
   const inputRef=useRef<HTMLInputElement>(null);
   const baseMestreRef=useRef<HTMLInputElement>(null);
   const[limiteDisp,setLimiteDisp]=useState(appState.limiteDisparoDiario||20);
@@ -2261,7 +2363,10 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
           <Panel>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
               <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text}}>{hubNome(dreStation)}</div>
-              <button onClick={()=>{onSave({dreConfigs:{...appState.dreConfigs,[dreStation]:cfg}});setDreSaved(true);setTimeout(()=>setDreSaved(false),2000);}} style={{background:dreSaved?"rgba(0,229,160,0.2)":T.greenDim,border:`1px solid ${dreSaved?T.green:"rgba(0,229,160,0.3)"}`,color:T.green,padding:"8px 18px",borderRadius:8,fontSize:12,cursor:"pointer",fontFamily:T.mono}}>{dreSaved?"✅ Salvo":"💾 Salvar"}</button>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontFamily:T.mono,fontSize:10,color:dreSaved?T.green:T.text3}}>{dreSaved?"✅ Salvo automaticamente":""}</span>
+                <button onClick={()=>{onSave({dreConfigs:{...appState.dreConfigs,[dreStation]:cfg}});setDreSaved(true);setTimeout(()=>setDreSaved(false),2000);}} style={{background:dreSaved?"rgba(0,229,160,0.2)":T.greenDim,border:`1px solid ${dreSaved?T.green:"rgba(0,229,160,0.3)"}`,color:T.green,padding:"8px 18px",borderRadius:8,fontSize:12,cursor:"pointer",fontFamily:T.mono}}>{dreSaved?"✅":"💾 Salvar"}</button>
+              </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:12}}>
               {inp("modelo","Modelo","select",["investidor","propria"])}{inp("pctEspaco","% Parceiro Espaço","number")}{inp("pctImposto","% Imposto","number")}
@@ -3093,7 +3198,7 @@ export default function Home() {
         {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} />}
         {tab === "usuarios"  && <TabUsuarios sessions={sessions} appState={appState} />}
         {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
-        {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} />}
+        {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
         {tab === "config"    && <TabConfig appState={appState} onSave={handleSave} />}
       </main>
