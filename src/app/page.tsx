@@ -3648,12 +3648,26 @@ export default function Home() {
     { id: "config",   label: "Config",       icon: "⚙️"  },
   ];
 
-  // Demo Mode — não exibe tela de upload
+  // Demo Mode — carrega dados fixos automaticamente
   useEffect(()=>{
-    if(DEMO_MODE&&sessions.length===0){
-      // Noop — dados seriam carregados via prop em deploy demo
-      // Para demo real, injetar sessions via NEXT_PUBLIC_DEMO_DATA
-    }
+    if(!DEMO_MODE||sessions.length>0)return;
+    fetch('/demo_data.json')
+      .then(r=>r.json())
+      .then((data:{d:string;hub:string;user:string;charger:string;e:number;v:number;h:number|null;dur:number|null;ok:boolean}[])=>{
+        const parsed:Session[]=data.map((s,i)=>{
+          const date=new Date(s.d);
+          const hubK=hubKey(s.hub);
+          return{
+            id:i,date,hub:s.hub,hubKey:hubK,user:s.user,charger:s.charger,
+            energy:s.e,value:s.v,duration:"",durMin:s.dur,
+            overstayMin:s.dur&&s.dur>90?s.dur-60:null,
+            startHour:s.h,status:s.ok?"Finalizado":"Cancelado",
+            cancelled:!s.ok,source:"spott" as const,
+          };
+        });
+        setSessions(parsed);
+      })
+      .catch(e=>console.error("Demo data error:",e));
   },[DEMO_MODE]);
 
   if (!sessions.length && !DEMO_MODE) {
@@ -3777,7 +3791,20 @@ export default function Home() {
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
         {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
         {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
-        {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
+        {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
+        {tab === "acoes" && DEMO_MODE && (
+          <div style={{padding:"60px 28px",textAlign:"center" as const,maxWidth:480,margin:"0 auto"}}>
+            <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+            <div style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:T.text,marginBottom:8}}>Módulo CRM</div>
+            <div style={{fontFamily:T.mono,fontSize:12,color:T.text2,marginBottom:8,lineHeight:1.7}}>
+              Fila do Dia inteligente, disparo automático com intervalo humanizado, segmentação por LTV, identificação de motoristas via WhatsApp e muito mais.
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text3,marginBottom:28}}>Disponível na versão completa.</div>
+            <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"inline-block",padding:"14px 32px",borderRadius:12,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:14,fontWeight:700,textDecoration:"none"}}>
+              💬 Quero o Vision completo
+            </a>
+          </div>
+        )}
         {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
         {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
         {tab === "config"    && DEMO_MODE && (
@@ -3792,6 +3819,15 @@ export default function Home() {
         )}
         {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} onSave={handleSave} />}
       </main>
+
+      {/* ── CTA DEMO — aparece em todas as abas ── */}
+      {DEMO_MODE&&(
+        <div style={{position:"fixed",bottom:isMobile?90:24,right:16,zIndex:200}}>
+          <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:50,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:13,fontWeight:700,textDecoration:"none",boxShadow:"0 4px 20px rgba(0,229,160,0.4)"}}>
+            💬 Falar com Wagner
+          </a>
+        </div>
+      )}
 
       {/* ── BOTTOM NAV (MOBILE APENAS) ── */}
       {isMobile && (
