@@ -1847,6 +1847,9 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
     const tel=getTel(user);if(!tel)return;
     setSending(p=>({...p,[`${user}_${msgId}`]:true}));
     const msg=montarMsg(template,user,hubK,cupom);
+    const supaUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supaKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if(supaUrl&&supaKey){const num=tel.replace(/\D/g,"");const fone=num.startsWith("55")?num:"55"+num;fetch(`${supaUrl}/rest/v1/webhook_respostas`,{method:"POST",headers:{"Content-Type":"application/json","apikey":supaKey,"Authorization":`Bearer ${supaKey}`,"Prefer":"return=minimal"},body:JSON.stringify({telefone:fone,mensagem:`__hub__${hubK}`,resposta:null,hub_key:hubK,processado:false}),}).catch(()=>{});}
     try{const r=await fetch("/api/zapi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:tel,message:msg})});const d=await r.json();const entry={ts:new Date().toISOString(),nome:user,msgId,status:d.ok?"ok" as const:"err" as const,msg:d.erro};const updated=[entry,...localDisparos.slice(0,199)];setLocalDisparos(updated);onSaveDisparos(updated);}
     catch{const entry={ts:new Date().toISOString(),nome:user,msgId,status:"err" as const,msg:"Erro de rede"};const updated=[entry,...localDisparos.slice(0,199)];setLocalDisparos(updated);onSaveDisparos(updated);}
     setSending(p=>({...p,[`${user}_${msgId}`]:false}));
