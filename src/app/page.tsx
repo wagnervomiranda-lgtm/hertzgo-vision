@@ -841,6 +841,268 @@ function TabDashboard({sessions,meta,onMetaChange}:{sessions:Session[];meta:numb
         {hasSpott&&<span style={{background:"rgba(0,229,160,0.1)",color:T.green,padding:"2px 7px",borderRadius:4,fontSize:9,border:"1px solid rgba(0,229,160,0.2)"}}>Spott</span>}
         {hasMove&&<span style={{background:"rgba(59,130,246,0.1)",color:"#60a5fa",padding:"2px 7px",borderRadius:4,fontSize:9,border:"1px solid rgba(59,130,246,0.2)"}}>Move</span>}
       </div>
+      {/* ── BRIEFING DIÁRIO ─────────────────────────────────────────── */}
+      {(()=>{
+        const allOk=sessions.filter(s=>!s.cancelled&&s.energy>0);
+        const hoje=Date.now();
+
+        // Último dia do CSV
+        const allDates=allOk.map(s=>s.date.getTime());
+        const maxTs=allDates.length?Math.max(...allDates):hoje;
+        const maxDay=new Date(maxTs);maxDay.setHours(0,0,0,0);
+        const ontemOk=allOk.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime();});
+
+        // Mês atual
+        const mesAtualOk=allOk.filter(s=>s.date.getMonth()===maxDay.getMonth()&&s.date.getFullYear()===maxDay.getFullYear());
+
+        // KPIs ontem
+        const revOntem=ontemOk.reduce((a,s)=>a+s.value,0);
+        const kwhOntem=ontemOk.reduce((a,s)=>a+s.energy,0);
+        const sessOntem=ontemOk.length;
+
+        // KPIs mês
+        const revMes=mesAtualOk.reduce((a,s)=>a+s.value,0);
+        const kwhMes=mesAtualOk.reduce((a,s)=>a+s.energy,0);
+        const sessMes=mesAtualOk.length;
+        const diasMes=new Set(mesAtualOk.map(s=>s.date.toDateString())).size||1;
+        const avgRevDia=revMes/diasMes;
+        const diasNoMes=30;
+        const projMes=avgRevDia*diasNoMes;
+
+        // Overstay ontem
+        const overstayOntem=ontemOk.filter(s=>s.overstayMin&&s.overstayMin>5);
+
+        // Cancelamentos ontem
+        const cancelOntem=sessions.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay.getTime()&&s.cancelled;});
+        const totalOntem=ontemOk.length+cancelOntem.length;
+        const cancelRate=totalOntem>0?cancelOntem.length/totalOntem:0;
+        const avgCancelRate=sessions.length>0?sessions.filter(s=>s.cancelled).length/sessions.length:0;
+        const cancelAlerta=cancelRate>avgCancelRate*1.5&&cancelOntem.length>=3;
+
+        // Saúde por estação (resumida)
+        const hubs2=Array.from(new Set(allOk.map(s=>s.hubKey)));
+        const saudeEstacoes=hubs2.map(h=>{
+          const hSess=allOk.filter(s=>s.hubKey===h);
+          const daysH=new Set(hSess.map(s=>s.date.toDateString())).size||1;
+          const avgSess=hSess.length/daysH;
+          const hOntem=ontemOk.filter(s=>s.hubKey===h);
+          const temOntem=hOntem.length>0;
+          const revH=hSess.reduce((a,s)=>a+s.value,0);
+          const avgRevH=revH/daysH;
+          const revOntemH=hOntem.reduce((a,s)=>a+s.value,0);
+          const abaixoMedia=temOntem&&revOntemH<avgRevH*0.6;
+          const semMovimento=!temOntem;
+          const ovH=hOntem.filter(s=>s.overstayMin&&s.overstayMin>5);
+          let status:"ok"|"warn"|"crit"="ok";
+          if(semMovimento||abaixoMedia)status="warn";
+          if(semMovimento&&avgSess>=5)status="crit";
+          return{hub:h,status,semMovimento,abaixoMedia,overstay:ovH.length,sessOntem:hOntem.length,revOntem:revOntemH,avgRevDia:avgRevH};
+        });
+
+        // Usuários em atenção
+        const users2=classificarUsuarios(allOk);
+        const vipScores2:Record<string,ReturnType<typeof calcVipScore>>={};
+        users2.filter(u=>u.isMotorista).forEach(u=>{vipScores2[u.user]=calcVipScore(u.user,allOk);});
+        const motoristasRisco=users2.filter(u=>u.isMotorista&&["em_risco","churned"].includes(vipScores2[u.user]?.status||""));
+        const novosHoje=users2.filter(u=>{
+          const primeiraRecarga=Math.min(...allOk.filter(s=>s.user===u.user).map(s=>s.date.getTime()));
+          return(maxTs-primeiraRecarga)<7*86400000;
+        });
+
+        // Ações sugeridas
+        const acoes:{icon:string;texto:string;tipo:"crm"|"op"|"info";cor:string}[]=[];
+        if(motoristasRisco.length>0)acoes.push({icon:"🔴",texto:`${motoristasRisco.length} motoristas em risco — disparar MSG Risco`,tipo:"crm",cor:T.red});
+        if(novosHoje.length>0)acoes.push({icon:"🌱",texto:`${novosHoje.length} novos usuários esta semana — enviar boas-vindas`,tipo:"crm",cor:T.teal});
+        overstayOntem.forEach(s=>acoes.push({icon:"⏱️",texto:`Overstay: ${s.user} em ${hubNome(s.hubKey)} (${s.overstayMin}min)`,tipo:"op",cor:T.amber}));
+        if(cancelAlerta)acoes.push({icon:"⚠️",texto:`Cancelamentos acima da média ontem: ${(cancelRate*100).toFixed(0)}% (média ${(avgCancelRate*100).toFixed(0)}%)`,tipo:"op",cor:T.amber});
+        saudeEstacoes.filter(e=>e.semMovimento).forEach(e=>acoes.push({icon:"🔌",texto:`${hubNome(e.hub)} sem sessões ontem — verificar carregador`,tipo:"op",cor:T.red}));
+        saudeEstacoes.filter(e=>e.abaixoMedia&&!e.semMovimento).forEach(e=>acoes.push({icon:"📉",texto:`${hubNome(e.hub)} abaixo da média (${brl(e.revOntem)} vs ${brl(e.avgRevDia)}/dia)`,tipo:"info",cor:T.text2}));
+
+        const[briefingOpen,setBriefingOpen]=useState(true);
+        const[acoesResolvidas,setAcoesResolvidas]=useState<number[]>([]);
+        const resolverAcao=(i:number)=>setAcoesResolvidas(prev=>[...prev,i]);
+        const acoesAtivas=acoes.filter((_,i)=>!acoesResolvidas.includes(i));
+
+        const dataOntem=maxDay.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+        const mesNome=maxDay.toLocaleDateString("pt-BR",{month:"long"});
+
+        const crits=saudeEstacoes.filter(e=>e.status==="crit").length;
+        const warns=saudeEstacoes.filter(e=>e.status==="warn").length;
+        const briefingCor=crits>0?T.red:warns>0||acoesAtivas.filter(a=>a.tipo==="op").length>0?T.amber:T.green;
+        const briefingEmoji=crits>0?"🔴":warns>0?"🟡":"🟢";
+
+        return(
+          <div style={{marginBottom:16,background:`${briefingCor}06`,border:`1px solid ${briefingCor}30`,borderRadius:16,overflow:"hidden"}}>
+            {/* Header */}
+            <div onClick={()=>setBriefingOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:20}}>{briefingEmoji}</span>
+                <div>
+                  <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:briefingCor}}>Briefing do Dia — {dataOntem}</div>
+                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{acoesAtivas.length} ações · {saudeEstacoes.filter(e=>e.status==="ok").length}/{saudeEstacoes.length} estações ok · {mesNome}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {acoesAtivas.filter(a=>a.tipo==="op").length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(245,158,11,0.2)",color:T.amber,border:"1px solid rgba(245,158,11,0.3)"}}>⚠️ {acoesAtivas.filter(a=>a.tipo==="op").length}</span>}
+                {acoesAtivas.filter(a=>a.tipo==="crm").length>0&&<span style={{fontFamily:T.mono,fontSize:10,padding:"2px 8px",borderRadius:20,background:"rgba(239,68,68,0.2)",color:T.red,border:"1px solid rgba(239,68,68,0.3)"}}>📤 {acoesAtivas.filter(a=>a.tipo==="crm").length}</span>}
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{briefingOpen?"▲":"▼"}</span>
+              </div>
+            </div>
+
+            {briefingOpen&&(
+              <div style={{borderTop:`1px solid ${briefingCor}20`}}>
+
+                {/* SAÚDE POR ESTAÇÃO */}
+                <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Saúde das Estações</div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {saudeEstacoes.map(e=>{
+                      const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
+                      const emoji=e.status==="crit"?"🔴":e.status==="warn"?"🟡":"🟢";
+                      return(
+                        <div key={e.hub} style={{background:`${cor}08`,border:`1px solid ${cor}30`,borderRadius:10,padding:"8px 12px",minWidth:120}}>
+                          <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}>
+                            <span style={{fontSize:12}}>{emoji}</span>
+                            <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:cor}}>{trunc(hubNome(e.hub),12)}</span>
+                          </div>
+                          <div style={{fontFamily:T.mono,fontSize:9,color:T.text2}}>
+                            {e.semMovimento?"sem sessões":e.sessOntem+" sess · "+brl(e.revOntem)}
+                          </div>
+                          {e.overstay>0&&<div style={{fontFamily:T.mono,fontSize:9,color:T.amber,marginTop:2}}>⏱️ {e.overstay} overstay</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* KPIs ONTEM vs MÊS */}
+                <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8}}>
+                    {[
+                      {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
+                      {label:"Energia",ontem:`${kwhOntem.toFixed(0)} kWh`,mes:`${kwhMes.toFixed(0)} kWh`,sub:`${(kwhMes/diasMes).toFixed(0)}/dia`,cor:T.amber},
+                      {label:"Sessões",ontem:`${sessOntem}`,mes:`${sessMes}`,sub:`${(sessMes/diasMes).toFixed(1)}/dia`,cor:T.blue},
+                      {label:"Ticket",ontem:sessOntem>0?brl(revOntem/sessOntem):"—",mes:sessMes>0?brl(revMes/sessMes):"—",sub:`R${kwhMes>0?(revMes/kwhMes).toFixed(2):"-"}/kWh`,cor:T.purple},
+                    ].map((k,i)=>(
+                      <div key={i} style={{background:T.bg2,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`}}>
+                        <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                          <div>
+                            <div style={{fontFamily:T.mono,fontSize:8,color:T.text3,marginBottom:2}}>Ontem</div>
+                            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:k.cor}}>{k.ontem}</div>
+                          </div>
+                          <div>
+                            <div style={{fontFamily:T.mono,fontSize:8,color:T.text3,marginBottom:2}}>{mesNome.slice(0,3)}</div>
+                            <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text2}}>{k.mes}</div>
+                          </div>
+                        </div>
+                        <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* FINANCEIRO POR ESTAÇÃO */}
+                <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Faturamento por Estação</div>
+                  <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?480:undefined}}>
+                      <thead>
+                        <tr>
+                          <th style={TH}>Estação</th>
+                          <th style={THR}>Ontem</th>
+                          <th style={THR}>{mesNome.slice(0,3)}</th>
+                          <th style={THR}>Proj.</th>
+                          <th style={THR}>R$/kWh</th>
+                          <th style={TH}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {saudeEstacoes.sort((a,b)=>b.revOntem-a.revOntem).map(e=>{
+                          const hMes=mesAtualOk.filter(s=>s.hubKey===e.hub);
+                          const revHMes=hMes.reduce((a,s)=>a+s.value,0);
+                          const kwhHMes=hMes.reduce((a,s)=>a+s.energy,0);
+                          const diasHMes=new Set(hMes.map(s=>s.date.toDateString())).size||1;
+                          const projH=revHMes/diasHMes*30;
+                          const precoH=kwhHMes>0?revHMes/kwhHMes:0;
+                          const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
+                          return(
+                            <tr key={e.hub} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                              <td style={TD}><span style={{fontWeight:600,fontSize:12}}>{hubNome(e.hub)}</span></td>
+                              <td style={{...TDR,color:e.revOntem>0?T.green:T.text3}}>{e.revOntem>0?brl(e.revOntem):"—"}</td>
+                              <td style={{...TDR,color:T.text}}>{brl(revHMes)}</td>
+                              <td style={{...TDR,color:T.amber}}>{brl(projH)}</td>
+                              <td style={{...TDR,color:T.text2,fontSize:11}}>R${precoH.toFixed(2)}</td>
+                              <td style={TD}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 6px",borderRadius:4,background:`${cor}15`,color:cor}}>{e.status==="crit"?"🔴 crítico":e.status==="warn"?"🟡 atenção":"🟢 ok"}</span></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* USUÁRIOS EM ATENÇÃO */}
+                {(motoristasRisco.length>0||novosHoje.length>0)&&(
+                  <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Usuários em Atenção</div>
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
+                      {motoristasRisco.length>0&&(
+                        <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 12px"}}>
+                          <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.red,marginBottom:6}}>🔴 Motoristas em Risco ({motoristasRisco.length})</div>
+                          {motoristasRisco.slice(0,3).map(u=>(
+                            <div key={u.user} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                              {trunc(u.user,20)} · {vipScores2[u.user]?.diasSemRecarga}d sem recarregar
+                            </div>
+                          ))}
+                          {motoristasRisco.length>3&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{motoristasRisco.length-3} outros</div>}
+                        </div>
+                      )}
+                      {novosHoje.length>0&&(
+                        <div style={{background:"rgba(1,96,112,0.06)",border:"1px solid rgba(1,96,112,0.2)",borderRadius:10,padding:"10px 12px"}}>
+                          <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.teal,marginBottom:6}}>🌱 Novos esta semana ({novosHoje.length})</div>
+                          {novosHoje.slice(0,3).map(u=>(
+                            <div key={u.user} style={{fontFamily:T.mono,fontSize:10,color:T.text2,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                              {trunc(u.user,20)} · {hubNome(u.localFreqKey)}
+                            </div>
+                          ))}
+                          {novosHoje.length>3&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{novosHoje.length-3} outros</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* AÇÕES SUGERIDAS */}
+                {acoesAtivas.length>0&&(
+                  <div style={{padding:"12px 16px"}}>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Ações de Hoje</div>
+                    <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
+                      {acoesAtivas.map((a,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg2,borderRadius:8,border:`1px solid ${a.cor}20`,gap:10}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
+                            <span style={{fontSize:14,flexShrink:0}}>{a.icon}</span>
+                            <span style={{fontFamily:T.mono,fontSize:11,color:a.tipo==="op"?T.amber:a.tipo==="crm"?T.red:T.text2,lineHeight:1.4}}>{a.texto}</span>
+                          </div>
+                          <button onClick={()=>resolverAcao(acoes.indexOf(a))} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3,flexShrink:0,whiteSpace:"nowrap" as const}}>✓ Ok</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {acoesAtivas.length===0&&(
+                  <div style={{padding:"14px 16px",textAlign:"center" as const,fontFamily:T.mono,fontSize:11,color:T.green}}>
+                    ✅ Nenhuma ação pendente — operação normalizada
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <Semaforo sessions={filtered}/>
       <ProjecaoMensal sessions={filtered} meta={meta} onMetaChange={onMetaChange}/>
       <SectionLabel>KPIs do Período</SectionLabel>
