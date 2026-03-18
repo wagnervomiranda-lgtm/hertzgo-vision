@@ -662,13 +662,13 @@ function KpiCard({label,value,sub,accent="#00e5a0",small}:{label:string;value:st
       <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:accent}}/>
       <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{label}</div>
       <div style={{fontFamily:T.sans,fontSize:small?18:22,fontWeight:700,color:accent,lineHeight:1,marginBottom:4}}>{value}</div>
-      {sub&&<div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{sub}</div>}
+      {sub&&<div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{sub}</div>}
     </div>
   );
 }
 function SectionLabel({children}:{children:string}){
   return(
-    <div style={{display:"flex",alignItems:"center",gap:10,fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.18em",textTransform:"uppercase" as const,margin:"24px 0 12px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.18em",textTransform:"uppercase" as const,margin:"24px 0 12px"}}>
       {children}<div style={{flex:1,height:1,background:T.border}}/>
     </div>
   );
@@ -809,19 +809,36 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
   const dts=ok.map(s=>s.date.getTime());
   const minDate=dts.length?new Date(Math.min(...dts)):new Date();
   const maxDate=dts.length?new Date(Math.max(...dts)):new Date();
-  const dcSess=ok.filter(s=>/DC/i.test(s.charger)),acSess=ok.filter(s=>/AC/i.test(s.charger));
-  const dcRev=dcSess.reduce((a,s)=>a+s.value,0),acRev=acSess.reduce((a,s)=>a+s.value,0);
-  const dcKwh=dcSess.reduce((a,s)=>a+s.energy,0),acKwh=acSess.reduce((a,s)=>a+s.energy,0);
   const byDay:Record<string,{date:Date;rev:number;kwh:number;sess:number}>={};
   ok.forEach(s=>{const k=s.date.toDateString();if(!byDay[k])byDay[k]={date:s.date,rev:0,kwh:0,sess:0};byDay[k].rev+=s.value;byDay[k].kwh+=s.energy;byDay[k].sess++;});
   const dayData=Object.values(byDay).sort((a,b)=>a.date.getTime()-b.date.getTime()).map(d=>({date:fmtDate(d.date),rev:+d.rev.toFixed(2),kwh:+d.kwh.toFixed(0),sess:d.sess}));
+  // Dados por hub por dia para gráfico empilhado
+  const hubKeys2=Array.from(new Set(ok.map(s=>s.hubKey))).sort();
+  const HUB_COLORS=["#00e5a0","#00bcd4","#ffab00","#7c4dff","#ff5252","#448aff"];
+  const byDayHub:Record<string,Record<string,number>>={};
+  ok.forEach(s=>{const k=s.date.toDateString();if(!byDayHub[k])byDayHub[k]={};byDayHub[k][s.hubKey]=(byDayHub[k][s.hubKey]||0)+s.value;});
+  const dayDataHub=Object.entries(byDayHub).sort((a,b)=>new Date(a[0]).getTime()-new Date(b[0]).getTime()).map(([dateStr,hubs])=>{
+    const d={date:fmtDate(new Date(dateStr))};
+    hubKeys2.forEach(h=>{Object.assign(d,{[h]:+(hubs[h]||0).toFixed(0)});});
+    return d;
+  });
   const avgRev=totalRev/days;
   const hubMap:Record<string,{rev:number;kwh:number;sess:number}>={};
   ok.forEach(s=>{if(!hubMap[s.hubKey])hubMap[s.hubKey]={rev:0,kwh:0,sess:0};hubMap[s.hubKey].rev+=s.value;hubMap[s.hubKey].kwh+=s.energy;hubMap[s.hubKey].sess++;});
   const hubData=Object.entries(hubMap).sort((a,b)=>b[1].rev-a[1].rev).map(([key,d])=>({name:trunc(hubNome(key),isMobile?10:20),rev:+d.rev.toFixed(0),sess:d.sess,kwh:+d.kwh.toFixed(0)}));
   const userMap:Record<string,{rev:number;kwh:number;sess:number}>={};
   ok.forEach(s=>{if(!userMap[s.user])userMap[s.user]={rev:0,kwh:0,sess:0};userMap[s.user].rev+=s.value;userMap[s.user].kwh+=s.energy;userMap[s.user].sess++;});
-  const top5=Object.entries(userMap).sort((a,b)=>b[1].rev-a[1].rev).slice(0,5);
+  // Top 5 com estação principal
+  const userHubMap:Record<string,Record<string,number>>={};
+  ok.forEach(s=>{
+    if(!userHubMap[s.user])userHubMap[s.user]={};
+    userHubMap[s.user][s.hubKey]=(userHubMap[s.user][s.hubKey]||0)+s.value;
+  });
+  const top5=Object.entries(userMap).sort((a,b)=>b[1].rev-a[1].rev).slice(0,5).map(([name,d])=>{
+    const hubs=userHubMap[name]||{};
+    const mainHub=Object.entries(hubs).sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
+    return[name,{...d,mainHub}] as [string,{rev:number;kwh:number;sess:number;mainHub:string}];
+  });
   const hourData=Array(24).fill(0).map(()=>({sess:0,kwh:0}));
   ok.forEach(s=>{if(s.startHour!==null){hourData[s.startHour].sess++;hourData[s.startHour].kwh+=s.energy;}});
   const maxHour=Math.max(...hourData.map(h=>h.sess),1);
@@ -969,7 +986,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
 
                 {/* SAÚDE POR ESTAÇÃO */}
                 <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Saúde das Estações</div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Saúde das Estações</div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                     {saudeEstacoes.map(e=>{
                       const cor=e.status==="crit"?T.red:e.status==="warn"?T.amber:T.green;
@@ -992,7 +1009,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
 
                 {/* KPIs ONTEM vs MÊS */}
                 <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
                   <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8}}>
                     {[
                       {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
@@ -1001,10 +1018,10 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
                       {label:"Ticket",ontem:sessOntem>0?brl(revOntem/sessOntem):"—",mes:sessMes>0?brl(revMes/sessMes):"—",sub:`R${kwhMes>0?(revMes/kwhMes).toFixed(2):"-"}/kWh`,cor:T.purple},
                     ].map((k,i)=>(
                       <div key={i} style={{background:T.bg2,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`}}>
-                        <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
+                        <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
                           <div>
-                            <div style={{fontFamily:T.mono,fontSize:8,color:T.text3,marginBottom:2}}>Ontem</div>
+                            <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>Ontem</div>
                             <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:k.cor}}>{k.ontem}</div>
                           </div>
                           <div>
@@ -1020,7 +1037,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
 
                 {/* FINANCEIRO POR ESTAÇÃO */}
                 <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Faturamento por Estação</div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Faturamento por Estação</div>
                   <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?480:undefined}}>
                       <thead>
@@ -1061,7 +1078,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
                 {/* USUÁRIOS EM ATENÇÃO */}
                 {(motoristasRisco.length>0||novosHoje.length>0)&&(
                   <div style={{padding:"12px 16px",borderBottom:`1px solid rgba(255,255,255,0.05)`}}>
-                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Usuários em Atenção</div>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Usuários em Atenção</div>
                     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
                       {motoristasRisco.length>0&&(
                         <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 12px"}}>
@@ -1092,7 +1109,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
                 {/* AÇÕES SUGERIDAS */}
                 {acoesAtivas.length>0&&(
                   <div style={{padding:"12px 16px"}}>
-                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Ações de Hoje</div>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Ações de Hoje</div>
                     <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
                       {acoesAtivas.map((a,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg2,borderRadius:8,border:`1px solid ${a.cor}20`,gap:10}}>
@@ -1128,19 +1145,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         <KpiCard label="Sessões" value={`${totalSess}`} sub={`${(totalSess/days).toFixed(1)}/dia`} accent={T.blue}/>
         <KpiCard label="Preço/kWh" value={`R$\u00a0${priceKwh.toFixed(2)}`} sub={`Ticket: ${brl(ticket)}`} accent={T.red}/>
       </div>
-      {/* DC vs AC — empilhado no mobile */}
-      {dcSess.length>0&&acSess.length>0&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:10,marginBottom:24}}>
-          {[{label:"⚡ DC 120kW",sess:dcSess,rev:dcRev,kwh:dcKwh,color:T.purple,bg:"rgba(139,92,246,0.08)",border:"rgba(139,92,246,0.25)"},{label:"🔌 AC 22kW",sess:acSess,rev:acRev,kwh:acKwh,color:T.green,bg:"rgba(0,229,160,0.08)",border:"rgba(0,229,160,0.25)"}].map((dc,i)=>(
-            <div key={i} style={{background:dc.bg,border:`1px solid ${dc.border}`,borderRadius:14,padding:"12px 16px"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:dc.color}}>{dc.label}</span><span style={{fontFamily:T.mono,fontSize:10,color:dc.color,padding:"2px 8px",borderRadius:4,background:`${dc.color}20`}}>{dc.sess.length} sessões</span></div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-                {[{l:"Receita",v:brl(dc.rev)},{l:"kWh",v:dc.kwh.toFixed(0)},{l:"Ticket",v:brl(dc.sess.length>0?dc.rev/dc.sess.length:0)}].map((k,j)=>(<div key={j}><div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:3}}>{k.l}</div><div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:dc.color}}>{k.v}</div></div>))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+
       {/* Gráficos — empilhados no mobile */}
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.4fr 1fr",gap:14,marginBottom:24}}>
         <Panel>
@@ -1152,12 +1157,103 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         </Panel>
         <Panel>
           <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,marginBottom:14,color:T.text}}>Top 5 Usuários</div>
-          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={TH}>#</th><th style={TH}>Usuário</th><th style={THR}>Total</th></tr></thead><tbody>{top5.map(([name,d],i)=>{const rc=["#f59e0b","#94a3b8","#b47c3c"][i]||T.text3;return(<tr key={name}><td style={TD}><span style={{fontFamily:T.mono,fontWeight:700,color:rc,fontSize:11}}>{i+1}</span></td><td style={TD}><span style={{fontSize:12,fontWeight:500}}>{trunc(name,isMobile?12:16)}</span></td><td style={{...TDR,color:T.green,fontWeight:600}}>{brl(d.rev)}</td></tr>);})}</tbody></table>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr><th style={TH}>#</th><th style={TH}>Usuário</th><th style={TH}>Estação</th><th style={THR}>Total</th></tr></thead>
+            <tbody>{top5.map(([name,d],i)=>{
+              const rc=["#f59e0b","#94a3b8","#b47c3c"][i]||T.text3;
+              const hubShort=trunc(hubNome(d.mainHub),isMobile?8:12);
+              return(<tr key={name}>
+                <td style={TD}><span style={{fontFamily:T.mono,fontWeight:700,color:rc,fontSize:11}}>{i+1}</span></td>
+                <td style={TD}><span style={{fontSize:12,fontWeight:500}}>{trunc(name,isMobile?10:16)}</span></td>
+                <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,color:T.text2,background:`${T.border}`,padding:"2px 6px",borderRadius:4}}>{hubShort}</span></td>
+                <td style={{...TDR,color:T.green,fontWeight:600}}>{brl(d.rev)}</td>
+              </tr>);
+            })}</tbody>
+          </table>
         </Panel>
       </div>
-      <SectionLabel>Receita & Sessões Diárias</SectionLabel>
+      {/* TERMÔMETRO NEON — Receita Hoje vs Mês */}
+      {(()=>{
+        const allOkDash=ok;
+        const dts2=allOkDash.map(s=>s.date.getTime());
+        const maxTs2=dts2.length?Math.max(...dts2):Date.now();
+        const maxDay2=new Date(maxTs2);maxDay2.setHours(0,0,0,0);
+        const ontemDash=allOkDash.filter(s=>{const d=new Date(s.date);d.setHours(0,0,0,0);return d.getTime()===maxDay2.getTime();});
+        const mesDash=allOkDash.filter(s=>s.date.getMonth()===maxDay2.getMonth()&&s.date.getFullYear()===maxDay2.getFullYear());
+        const revHoje=ontemDash.reduce((a,s)=>a+s.value,0);
+        const revMesDash=mesDash.reduce((a,s)=>a+s.value,0);
+        const diasMesDash=new Set(mesDash.map(s=>s.date.toDateString())).size||1;
+        const metaDiaria=meta>0?meta/30:revHoje>0?revHoje*1.2:100;
+        const metaMes=meta>0?meta:revMesDash>0?revMesDash*1.2:1000;
+        const pctHoje=Math.min(100,(revHoje/metaDiaria)*100);
+        const pctMes=Math.min(100,(revMesDash/metaMes)*100);
+        const getCor=(pct:number)=>pct>=100?"#00e5a0":pct>=75?"#ffab00":"#ff5252";
+        const getGlow=(pct:number)=>pct>=100?"0 0 12px rgba(0,229,160,0.6)":pct>=75?"0 0 12px rgba(255,171,0,0.5)":"0 0 12px rgba(255,82,82,0.5)";
+        return(
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:24}}>
+            {[
+              {label:"Receita Ontem",valor:revHoje,meta:metaDiaria,pct:pctHoje,sub:`Meta: ${brl(metaDiaria)}`},
+              {label:"Receita do Mês",valor:revMesDash,meta:metaMes,pct:pctMes,sub:`Meta: ${brl(metaMes)} · ${diasMesDash}d`},
+            ].map((t,i)=>{
+              const cor=getCor(t.pct);
+              const glow=getGlow(t.pct);
+              return(
+                <div key={i} style={{background:T.bg2,border:`1px solid ${cor}40`,borderRadius:16,padding:"16px 20px",position:"relative",overflow:"hidden"}}>
+                  {/* Glow de fundo */}
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${cor},transparent)`,boxShadow:glow}}/>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:4}}>{t.label}</div>
+                      <div style={{fontFamily:T.sans,fontSize:24,fontWeight:800,color:cor,lineHeight:1,textShadow:glow}}>{brl(t.valor)}</div>
+                      <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginTop:4}}>{t.sub}</div>
+                    </div>
+                    <div style={{textAlign:"right" as const}}>
+                      <div style={{fontFamily:T.mono,fontSize:22,fontWeight:800,color:cor,textShadow:glow}}>{t.pct.toFixed(0)}%</div>
+                      <div style={{fontFamily:T.mono,fontSize:9,color:T.text2}}>{t.pct>=100?"✅ meta":t.pct>=75?"🟡 perto":"🔴 atrás"}</div>
+                    </div>
+                  </div>
+                  {/* Barra termômetro */}
+                  <div style={{height:8,background:T.bg3,borderRadius:4,overflow:"hidden",border:`1px solid ${T.border}`}}>
+                    <div style={{
+                      height:"100%",
+                      width:`${t.pct}%`,
+                      background:`linear-gradient(90deg,${cor}99,${cor})`,
+                      borderRadius:4,
+                      boxShadow:glow,
+                      transition:"width 1s ease"
+                    }}/>
+                  </div>
+                  {t.pct>=100&&(
+                    <div style={{position:"absolute",top:8,right:12,fontFamily:T.mono,fontSize:10,color:cor,textShadow:glow}}>🎯 META!</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      <SectionLabel>Receita Diária por Estação</SectionLabel>
       <Panel style={{marginBottom:24}}>
-        <ResponsiveContainer width="100%" height={160}><LineChart data={dayData}><CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)"/><XAxis dataKey="date" tick={{fill:T.text3,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false} interval="preserveStartEnd"/><YAxis yAxisId="rev" tickFormatter={v=>`R$${(v/1000).toFixed(0)}k`} tick={{fill:T.text3,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false} width={44}/><YAxis yAxisId="sess" orientation="right" tick={{fill:T.text3,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false} width={24}/><Tooltip contentStyle={{background:T.bg3,border:`1px solid ${T.border2}`,borderRadius:10,fontFamily:T.mono,fontSize:11}}/><ReferenceLine yAxisId="rev" y={avgRev} stroke="rgba(245,158,11,0.4)" strokeDasharray="5 4" strokeWidth={1.5}/><Line yAxisId="rev" dataKey="rev" stroke={T.green} strokeWidth={2} dot={{r:2,fill:T.green}} activeDot={{r:5}} name="Receita"/><Line yAxisId="sess" dataKey="sess" stroke={T.blue} strokeWidth={1.5} dot={false} strokeDasharray="4 3" name="Sessões"/></LineChart></ResponsiveContainer>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
+          {hubKeys2.map((h,i)=>(
+            <div key={h} style={{display:"flex",alignItems:"center",gap:5}}>
+              <div style={{width:10,height:10,borderRadius:2,background:HUB_COLORS[i%HUB_COLORS.length]}}/>
+              <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{trunc(hubNome(h),14)}</span>
+            </div>
+          ))}
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={dayDataHub} barCategoryGap="20%">
+            <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)"/>
+            <XAxis dataKey="date" tick={{fill:T.text2,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
+            <YAxis tickFormatter={v=>`R$${(v/1000).toFixed(0)}k`} tick={{fill:T.text2,fontSize:9,fontFamily:T.mono}} axisLine={false} tickLine={false} width={44}/>
+            <Tooltip contentStyle={{background:T.bg3,border:`1px solid ${T.border2}`,borderRadius:10,fontFamily:T.mono,fontSize:11}} formatter={(v:number,name:string)=>[brl(v),hubNome(name)]}/>
+            {hubKeys2.map((h,i)=>(
+              <Bar key={h} dataKey={h} stackId="a" fill={HUB_COLORS[i%HUB_COLORS.length]} radius={i===hubKeys2.length-1?[4,4,0,0]:[0,0,0,0]}/>
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
       </Panel>
       <SectionLabel>Heatmap por Hora</SectionLabel>
       <Panel>
@@ -1802,38 +1898,16 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
           </div>
         </div>
       )}
-      {/* Respostas Z-API */}
-      <div style={{marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-          <div>
-            <div style={{fontFamily:T.sans,fontSize:15,fontWeight:700,color:T.text}}>📨 Respostas WhatsApp</div>
-            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginTop:2}}>{loadingResp?"⏳ buscando...":"🔄 automático · atualiza a cada 60s"}</div>
-          </div>
-          <button onClick={()=>buscarRespostas(false)} disabled={loadingResp} style={{padding:"5px 12px",borderRadius:8,fontFamily:T.mono,fontSize:10,cursor:"pointer",border:`1px solid ${T.border}`,background:"transparent",color:T.text3}}>
-            {loadingResp?"⏳":"↻ agora"}
-          </button>
-        </div>
-        {respostas.length>0?(
-          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontFamily:T.mono,fontSize:11,minWidth:isMobile?360:undefined}}>
-              <thead><tr style={{background:T.bg3}}><th style={{...TH,padding:"8px 12px"}}>Tel</th><th style={{...TH,padding:"8px 12px"}}>Resposta</th><th style={{...TH,padding:"8px 12px"}}>Hora</th><th style={{...TH,padding:"8px 12px"}}></th></tr></thead>
-              <tbody>{respostas.map(r=>(<tr key={r.id} style={{borderTop:`1px solid ${T.border}`}}>
-                <td style={{...TD,padding:"8px 12px"}}>{r.telefone}</td>
-                <td style={{...TD,padding:"8px 12px"}}>{r.resposta==="1"?<span style={{background:"rgba(0,229,160,0.15)",color:T.green,padding:"2px 8px",borderRadius:6}}>1·Motorista</span>:r.resposta==="2"?<span style={{background:"rgba(255,171,0,0.15)",color:T.amber,padding:"2px 8px",borderRadius:6}}>2·Não</span>:<span style={{color:T.text3}}>—</span>}</td>
-                <td style={{...TD,padding:"8px 12px",color:T.text3,fontSize:10}}>{new Date(r.criado_em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
-                <td style={{...TD,padding:"8px 12px"}}><button onClick={()=>marcarProcessado(r.id)} style={{padding:"3px 8px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",border:`1px solid ${T.border}`,background:"transparent",color:T.text3}}>✓</button></td>
-              </tr>))}</tbody>
-            </table>
-          </div>
-        ):(
-          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px",textAlign:"center",fontFamily:T.mono,fontSize:11,color:T.text3}}>
-            ✅ Sem respostas pendentes — monitorando automaticamente
-          </div>
-        )}
-      </div>
-      {/* KPIs */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:20}}>
+      {/* KPIs — incluindo status WhatsApp */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:10,marginBottom:20}}>
         <KpiCard label="Z-API" value={zapiStatus==="ok"?"✅ OK":zapiStatus==="err"?"⚠️ Verificar":"⏳"} sub="status" accent={zapiStatus==="ok"?T.green:T.amber} small/>
+        <KpiCard
+          label="WhatsApp"
+          value={loadingResp?"⏳":respostas.length>0?`${respostas.length} nova${respostas.length>1?"s":""}`:"✅"}
+          sub={loadingResp?"buscando...":respostas.length>0?`${respostas.filter(r=>r.resposta==="1").length} motor · ${respostas.filter(r=>r.resposta==="2").length} não`:"sem pendentes"}
+          accent={respostas.length>0?T.amber:T.green}
+          small
+        />
         <KpiCard label="Fila Total" value={`${secoes.reduce((a,s)=>a+s.count,0)}`} sub="elegíveis" accent={T.red} small/>
         <KpiCard label="Enviados 30d" value={`${localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<30*86400000).length}`} sub="confirmados" accent={T.amber} small/>
         <KpiCard label="Total Enviado" value={`${localDisparos.filter(d=>d.status==="ok").length}`} sub="Z-API" accent={T.green} small/>
