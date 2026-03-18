@@ -3230,7 +3230,6 @@ function TabGoals({sessions,appState}:{sessions:Session[];appState:AppState}){
       <SectionLabel>🔮 Previsão de Churn</SectionLabel>
       {(()=>{
         // Calcular frequência histórica por usuário e prever churn
-        const motoristasSetGoals=new Set(classificarUsuarios(ok).filter(u=>u.isMotorista).map(u=>u.user));
         const previsoes=classificarUsuarios(ok).filter(u=>u.isMotorista||u.isHeavy).map(u=>{
           const uSess=ok.filter(s=>s.user===u.user).sort((a,b)=>a.date.getTime()-b.date.getTime());
           if(uSess.length<2)return null;
