@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#00e5a0",
+  themeColor: "#080b10",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -35,8 +35,15 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="HertzGo" />
+        <style>{`
+          html, body {
+            background-color: #080b10 !important;
+            margin: 0;
+            padding: 0;
+          }
+        `}</style>
       </head>
-      <body>{children}</body>
+      <body style={{backgroundColor:"#080b10",margin:0,padding:0}}>{children}</body>
     </html>
   );
 }
