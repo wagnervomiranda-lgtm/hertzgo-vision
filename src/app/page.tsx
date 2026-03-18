@@ -18,6 +18,17 @@ function useFonts() {
   }, []);
 }
 
+// ─── PWA SERVICE WORKER ───────────────────────────────────────────────────────
+function usePWA() {
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js")
+        .then(() => console.info("✅ HertzGo PWA ativo"))
+        .catch((e) => console.warn("SW:", e));
+    }
+  }, []);
+}
+
 // ─── RESPONSIVE HOOK ─────────────────────────────────────────────────────────
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState<boolean | null>(null);
@@ -3119,6 +3130,7 @@ function TabRelatorio({sessions,appState,onAddSessions}:{sessions:Session[];appS
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
 export default function Home() {
   useFonts();
+  usePWA();
   const isMobile = useIsMobile();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [appState, setAppState] = useState<AppState>(loadState);
