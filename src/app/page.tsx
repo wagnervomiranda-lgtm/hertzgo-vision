@@ -3422,13 +3422,21 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
         const[ocmErro,setOcmErro]=useState("");
         const estacoesOCM=appState.mercado?.estacoesOCM||[];
         const ocmAtualizado=appState.mercado?.ocmAtualizadoEm;
+        // Auto-busca: se nunca buscou ou faz 7+ dias
+        useEffect(()=>{
+          const setesDias=7*24*60*60*1000;
+          const deveAtualizar=!ocmAtualizado||(Date.now()-new Date(ocmAtualizado).getTime())>setesDias;
+          if(deveAtualizar&&!buscandoOCM&&estacoesOCM.length===0){
+            buscarOCM();
+          }
+        },[]);
 
+        const OCM_KEY=process.env.NEXT_PUBLIC_OCM_KEY||"";
         const buscarOCM=async()=>{
           setBuscandoOCM(true);setOcmErro("");
           try{
-            // Open Charge Map API — gratuita, sem autenticação necessária para uso básico
-            // Brasília: lat -15.7801, lng -47.9292, raio 50km
-            const res=await fetch("https://api.openchargemap.io/v3/poi/?output=json&countrycode=BR&latitude=-15.7801&longitude=-47.9292&distance=50&distanceunit=km&maxresults=200&compact=true&verbose=false");
+            const keyParam=OCM_KEY?`&key=${OCM_KEY}`:"";
+            const res=await fetch(`https://api.openchargemap.io/v3/poi/?output=json&countrycode=BR&latitude=-15.7801&longitude=-47.9292&distance=50&distanceunit=km&maxresults=200&compact=true&verbose=false${keyParam}`);
             if(!res.ok)throw new Error("Erro na API");
             const data=await res.json();
             const estacoes=data.map((e:Record<string,unknown>)=>({
@@ -3467,8 +3475,8 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
                 </div>
                 {ocmAtualizado&&<div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>Atualizado: {new Date(ocmAtualizado).toLocaleDateString("pt-BR")}</div>}
               </div>
-              <button onClick={buscarOCM} disabled={buscandoOCM} style={{padding:"8px 18px",borderRadius:10,fontFamily:T.sans,fontSize:12,fontWeight:600,cursor:"pointer",background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green}}>
-                {buscandoOCM?"⏳ Buscando...":"🔄 Buscar Estações de Brasília"}
+                <button onClick={buscarOCM} disabled={buscandoOCM} style={{padding:"8px 18px",borderRadius:10,fontFamily:T.sans,fontSize:12,fontWeight:600,cursor:"pointer",background:T.greenDim,border:"1px solid rgba(0,229,160,0.3)",color:T.green}}>
+                {buscandoOCM?"⏳ Buscando...":"🔄 Atualizar"}
               </button>
             </div>
             {ocmErro&&<div style={{fontFamily:T.mono,fontSize:11,color:T.red,marginBottom:12}}>{ocmErro}</div>}
@@ -3609,6 +3617,7 @@ export default function Home() {
   useFonts();
   usePWA();
   const isMobile = useIsMobile();
+  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [sessions, setSessions] = useState<Session[]>([]);
   const [appState, setAppState] = useState<AppState>(loadState);
   const [tab, setTab] = useState<Tab>("dash");
@@ -3639,7 +3648,15 @@ export default function Home() {
     { id: "config",   label: "Config",       icon: "⚙️"  },
   ];
 
-  if (!sessions.length) {
+  // Demo Mode — não exibe tela de upload
+  useEffect(()=>{
+    if(DEMO_MODE&&sessions.length===0){
+      // Noop — dados seriam carregados via prop em deploy demo
+      // Para demo real, injetar sessions via NEXT_PUBLIC_DEMO_DATA
+    }
+  },[DEMO_MODE]);
+
+  if (!sessions.length && !DEMO_MODE) {
     return (
       <div style={{ background: T.bg, minHeight: "100vh", color: T.text }}>
         <style>{`
@@ -3762,7 +3779,17 @@ export default function Home() {
         {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
         {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
-        {tab === "config"    && <TabConfig appState={appState} onSave={handleSave} />}
+        {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
+        {tab === "config"    && DEMO_MODE && (
+          <div style={{padding:"40px 28px",textAlign:"center" as const}}>
+            <div style={{fontSize:32,marginBottom:12}}>🔒</div>
+            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Versão Demonstrativa</div>
+            <div style={{fontFamily:T.mono,fontSize:12,color:T.text2,marginBottom:20}}>Configurações não disponíveis nesta versão.</div>
+            <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"inline-block",padding:"12px 28px",borderRadius:12,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:14,fontWeight:700,textDecoration:"none"}}>
+              💬 Falar com Wagner
+            </a>
+          </div>
+        )}
         {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} onSave={handleSave} />}
       </main>
 
