@@ -2223,16 +2223,7 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
   const[zapiTestResult,setZapiTestResult]=useState("");
   const[dreStation,setDreStation]=useState("costa");
   const[dreSaved,setDreSaved]=useState(false);
-  // Auto-save DRE com debounce 2s
   const autoSaveRef=useRef<ReturnType<typeof setTimeout>|null>(null);
-  useEffect(()=>{
-    if(autoSaveRef.current)clearTimeout(autoSaveRef.current);
-    autoSaveRef.current=setTimeout(()=>{
-      onSave({dreConfigs:{...appState.dreConfigs,[dreStation]:cfg}});
-      setDreSaved(true);setTimeout(()=>setDreSaved(false),2000);
-    },2000);
-    return()=>{if(autoSaveRef.current)clearTimeout(autoSaveRef.current);};
-  },[cfg]);
   const inputRef=useRef<HTMLInputElement>(null);
   const baseMestreRef=useRef<HTMLInputElement>(null);
   const[limiteDisp,setLimiteDisp]=useState(appState.limiteDisparoDiario||20);
@@ -2246,6 +2237,15 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
     madeiro_sp:{modelo:"investidor",pctEspaco:50,custoParceiro:0.80},
   };
   const[cfg,setCfg]=useState<DREConfig>({...defaultCFG,...(dreDefaults[dreStation]||{}),...(appState.dreConfigs[dreStation]||{})});
+  // Auto-save DRE com debounce 2s
+  useEffect(()=>{
+    if(autoSaveRef.current)clearTimeout(autoSaveRef.current);
+    autoSaveRef.current=setTimeout(()=>{
+      onSave({dreConfigs:{...appState.dreConfigs,[dreStation]:cfg}});
+      setDreSaved(true);setTimeout(()=>setDreSaved(false),2000);
+    },2000);
+    return()=>{if(autoSaveRef.current)clearTimeout(autoSaveRef.current);};
+  },[cfg]);
   useEffect(()=>{setCfg({...defaultCFG,...(dreDefaults[dreStation]||{}),...(appState.dreConfigs[dreStation]||{})});},[dreStation]);
   const[cupons,setCupons]=useState<CupomRegistro[]>(appState.cupons||[]);
   const[novoCupom,setNovoCupom]=useState<CupomRegistro>({usuario:"",motivo:"",validade:"",estacao:""});
