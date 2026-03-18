@@ -119,7 +119,7 @@ interface AppState {
   userOverrides: Record<string, UserOverride>;
   limiteDisparoDiario: number;
 }
-type Tab = "dash" | "dre" | "usuarios" | "acoes" | "config" | "relatorio" | "goals";
+type Tab = "dash" | "dre" | "acoes" | "config" | "relatorio" | "goals";
 
 // ─── ESTAÇÕES ────────────────────────────────────────────────────────────────
 const ESTACAO_MAP: Record<string, string> = {
@@ -1245,7 +1245,58 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         );
       })()}
 
-      <SectionLabel>Receita Diária por Estação</SectionLabel>
+      {/* PARCEIROS — card colapsável */}
+      {(()=>{
+        const allParceiros=classificarUsuarios(ok).filter(u=>u.isParceiro);
+        if(allParceiros.length===0)return null;
+        const[parcOpen,setParcOpen]=useState(false);
+        const volTotal=allParceiros.reduce((a,u)=>{
+          const uSess=ok.filter(s=>s.user===u.user);
+          return a+uSess.reduce((b,s)=>b+s.energy,0);
+        },0);
+        return(
+          <div style={{marginBottom:24,background:T.bg2,border:`1px solid rgba(59,130,246,0.25)`,borderRadius:14,overflow:"hidden"}}>
+            <div onClick={()=>setParcOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:16}}>🔵</span>
+                <div>
+                  <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#60a5fa"}}>Parceiros & Embaixadores</div>
+                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{allParceiros.length} parceiros · {volTotal.toFixed(0)} kWh total</div>
+                </div>
+              </div>
+              <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{parcOpen?"▲":"▼"}</span>
+            </div>
+            {parcOpen&&(
+              <div style={{borderTop:"1px solid rgba(59,130,246,0.15)",overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
+                  <thead><tr style={{background:T.bg3}}>
+                    <th style={TH}>Parceiro</th>
+                    <th style={TH}>Estação</th>
+                    <th style={THR}>kWh</th>
+                    <th style={THR}>Sessões</th>
+                  </tr></thead>
+                  <tbody>
+                    {allParceiros.map(u=>{
+                      const uSess=ok.filter(s=>s.user===u.user);
+                      const kwhU=uSess.reduce((a,s)=>a+s.energy,0);
+                      return(
+                        <tr key={u.user} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                          <td style={TD}><span style={{fontSize:12,fontWeight:500}}>{trunc(u.user,isMobile?14:22)}</span></td>
+                          <td style={TD}><span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{trunc(hubNome(u.localFreqKey),12)}</span></td>
+                          <td style={{...TDR,color:T.amber,fontSize:11}}>{kwhU.toFixed(0)}</td>
+                          <td style={{...TDR,color:T.text2,fontSize:11}}>{uSess.length}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+            <SectionLabel>Receita Diária por Estação</SectionLabel>
       <Panel style={{marginBottom:24}}>
         <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:12}}>
           {hubKeys2.map((h,i)=>(
@@ -1375,225 +1426,6 @@ function VipCategorias({motoristasOrdenados,vipScores,getTel}:{motoristasOrdenad
 }
 
 // ─── TAB USUÁRIOS ────────────────────────────────────────────────────────────
-function TabUsuarios({sessions,appState}:{sessions:Session[];appState:AppState}){
-  const isMobile=useIsMobile();
-  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
-  const users=useMemo(()=>classificarUsuarios(ok),[ok]);
-  const totalRev=ok.reduce((a,s)=>a+s.value,0);
-  const parceiros=users.filter(u=>u.isParceiro),motoristas=users.filter(u=>u.isMotorista);
-  const heavys=users.filter(u=>u.isHeavy),shoppers=users.filter(u=>!u.isParceiro&&!u.isMotorista&&!u.isHeavy);
-  const telMap:Record<string,string>={};
-  Object.values(appState.contatos).forEach(c=>{c.dados.forEach(d=>{if(d.telefone)telMap[d.nome.trim().toLowerCase()]=d.telefone;});});
-  const getTel=(nome:string)=>{const n=nome.trim().toLowerCase();if(telMap[n])return telMap[n];const found=Object.keys(telMap).find(k=>k.includes(n)||n.includes(k));return found?telMap[found]:null;};
-  const datas=ok.map(s=>s.date.getTime());
-  const maxData=datas.length?new Date(Math.max(...datas)):new Date();
-  const periodoInicio=datas.length?new Date(Math.min(...datas)):new Date();
-  const diasTotal=Math.max(1,Math.round((maxData.getTime()-periodoInicio.getTime())/86400000)+1);
-  const cortNovosDias=Math.min(14,Math.ceil(diasTotal*0.2));
-  const cortNovos=new Date(maxData.getTime()-cortNovosDias*86400000);
-  const usersAntes=new Set(ok.filter(s=>s.date<cortNovos).map(s=>s.user));
-  const novosNaRede=users.filter(u=>!usersAntes.has(u.user));
-  const novosNaEstacao=users.filter(u=>{
-    if(novosNaRede.some(n=>n.user===u.user))return false;
-    const sessRecentes=ok.filter(s=>s.user===u.user&&s.date>=cortNovos);
-    const hubsRecentes=new Set(sessRecentes.map(s=>s.hubKey));
-    const hubsAntigos=new Set(ok.filter(s=>s.user===u.user&&s.date<cortNovos).map(s=>s.hubKey));
-    return Array.from(hubsRecentes).some(h=>!hubsAntigos.has(h));
-  });
-  const totalComTel=users.filter(u=>getTel(u.user)).length;
-  const pctCobertura=users.length>0?(totalComTel/users.length*100).toFixed(0):"0";
-  const vipScores:Record<string,ReturnType<typeof calcVipScore>>={};
-  motoristas.forEach(u=>{vipScores[u.user]=calcVipScore(u.user,ok);});
-  const vipOrder:{[k:string]:number}={em_risco:0,churned:1,regular:2,ativo:3};
-  const motoristasOrdenados=[...motoristas].sort((a,b)=>(vipOrder[vipScores[a.user]?.status||"ativo"]??3)-(vipOrder[vipScores[b.user]?.status||"ativo"]??3));
-  const top10Rev=Object.values(users).sort((a,b)=>b.rev-a.rev).slice(0,10).reduce((a,u)=>a+u.rev,0);
-  const concPct=totalRev>0?(top10Rev/totalRev*100):0;
-  const hubKeys=Array.from(new Set(ok.map(s=>s.hubKey)));
-  const precosPraticados:Record<string,number>={};
-  hubKeys.forEach(h=>{precosPraticados[h]=calcPrecoPraticado(ok,h);});
-  const usersComCupom=users.filter(u=>{
-    const hk=u.localFreqKey;
-    if(!hk||!precosPraticados[hk])return false;
-    return u.precoMedioKwh>0&&u.precoMedioKwh<precosPraticados[hk]*0.90;
-  });
-  const[parceirosExpanded,setParceirosExpanded]=useState(false);
-  const custoParceiroPadrao=0.80;
-  const parceirosDetalhado=parceiros.map(u=>{
-    const hk=u.localFreqKey;
-    const custoParceiro=(appState.dreConfigs[hk]?.custoParceiro)||custoParceiroPadrao;
-    const precoPraticado=precosPraticados[hk]||1.39;
-    const custo=u.kwh*custoParceiro;
-    const potencial=u.kwh*precoPraticado;
-    return{...u,custo,potencial,delta:potencial-custo,precoPraticado,custoParceiro};
-  }).sort((a,b)=>b.kwh-a.kwh);
-  const totalKwhParceiros=parceirosDetalhado.reduce((a,u)=>a+u.kwh,0);
-  const totalCustoParceiros=parceirosDetalhado.reduce((a,u)=>a+u.custo,0);
-  const totalPotencialParceiros=parceirosDetalhado.reduce((a,u)=>a+u.potencial,0);
-  const totalKwhGeral=ok.reduce((a,s)=>a+s.energy,0);
-  const[activeSection,setActiveSection]=useState<"centro"|"novos"|"vip"|"parceiros"|"cupons">("centro");
-  const pad=isMobile?"16px 14px":"24px 28px";
-  return(
-    <div style={{padding:pad}}>
-      {/* KPIs — 2 colunas mobile */}
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:10,marginBottom:20}}>
-        <KpiCard label="Usuários" value={`${users.length}`} sub="únicos" accent={T.green}/>
-        <KpiCard label="Novos" value={`${novosNaRede.length}`} sub={`${cortNovosDias}d`} accent={T.teal}/>
-        <KpiCard label="Motoristas" value={`${motoristas.length}`} sub="prioritários" accent={T.red}/>
-        <KpiCard label="Cobertura" value={`${pctCobertura}%`} sub={`${totalComTel} tel.`} accent={+pctCobertura>=70?T.green:T.amber}/>
-        <KpiCard label="Concentração" value={`${concPct.toFixed(0)}%`} sub="Top 10" accent={concPct>40?T.red:T.green}/>
-      </div>
-      {/* Nav interna — scroll horizontal mobile */}
-      <div style={{display:"flex",gap:8,marginBottom:20,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
-        {([["centro","🎯 Decisão"],["novos","🆕 Novos"],["vip","🏆 VIP"],["parceiros","🔵 Parceiros"],["cupons","🎟️ Cupons"]] as [string,string][]).map(([id,label])=>(
-          <button key={id} onClick={()=>setActiveSection(id as typeof activeSection)} style={{padding:"6px 12px",borderRadius:10,fontFamily:T.mono,fontSize:11,cursor:"pointer",border:`1px solid ${activeSection===id?T.green:T.border}`,background:activeSection===id?T.greenDim:"transparent",color:activeSection===id?T.green:T.text2,whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
-        ))}
-      </div>
-
-      {/* CENTRO DE DECISÃO */}
-      {activeSection==="centro"&&(
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:24}}>
-          <Panel style={{borderLeft:`3px solid ${T.red}`}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.red,marginBottom:10}}>🔴 Requer Ação Agora</div>
-            {motoristasOrdenados.filter(u=>["em_risco","churned"].includes(vipScores[u.user]?.status||"")).slice(0,5).map(u=>{
-              const v=vipScores[u.user];const sc=v?.status==="em_risco"?"#fb923c":T.red;
-              return(<div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div><div style={{fontFamily:T.sans,fontSize:12,fontWeight:500,color:T.text}}>{trunc(u.user,isMobile?16:18)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{v?.diasSemRecarga}d sem · {trunc(hubNome(u.localFreqKey),10)}</div></div>
-                <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${sc}20`,color:sc}}>{v?.status}</span>
-              </div>);
-            })}
-            {motoristasOrdenados.filter(u=>["em_risco","churned"].includes(vipScores[u.user]?.status||"")).length===0&&<div style={{fontFamily:T.mono,fontSize:11,color:T.text3}}>✅ Nenhum em risco</div>}
-          </Panel>
-          <Panel style={{borderLeft:`3px solid ${T.amber}`}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.amber,marginBottom:10}}>🟡 Oportunidade</div>
-            {heavys.filter(u=>u.kwh>60||u.sess>=3).slice(0,5).map(u=>(
-              <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div><div style={{fontFamily:T.sans,fontSize:12,fontWeight:500,color:T.text}}>{trunc(u.user,isMobile?16:18)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.kwh.toFixed(0)} kWh · {u.sess} sess</div></div>
-                <span style={{fontFamily:T.mono,fontSize:9,color:T.amber}}>{brl(u.rev)}</span>
-              </div>
-            ))}
-            {heavys.length===0&&<div style={{fontFamily:T.mono,fontSize:11,color:T.text3}}>Sem heavy users</div>}
-          </Panel>
-          <Panel style={{borderLeft:`3px solid ${T.teal}`}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.teal,marginBottom:10}}>🆕 Boas-vindas Pendentes</div>
-            {novosNaRede.filter(u=>ESTACAO_PROPRIA.includes(u.localFreqKey)&&getTel(u.user)).slice(0,5).map(u=>(
-              <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div><div style={{fontFamily:T.sans,fontSize:12,fontWeight:500,color:T.text}}>{trunc(u.user,isMobile?16:18)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{hubNome(u.localFreqKey)}</div></div>
-                <span style={{fontFamily:T.mono,fontSize:9,color:T.green}}>📞 pronto</span>
-              </div>
-            ))}
-            {novosNaRede.filter(u=>ESTACAO_PROPRIA.includes(u.localFreqKey)).length===0&&<div style={{fontFamily:T.mono,fontSize:11,color:T.text3}}>Sem novos nas próprias</div>}
-          </Panel>
-          <Panel style={{borderLeft:`3px solid ${T.text3}`}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text2,marginBottom:10}}>📵 Sem Telefone</div>
-            <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:8}}>{users.length-totalComTel} usuários sem tel</div>
-            {users.filter(u=>!getTel(u.user)&&u.rev>50).sort((a,b)=>b.rev-a.rev).slice(0,5).map(u=>(
-              <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div><div style={{fontFamily:T.sans,fontSize:12,fontWeight:500,color:T.text}}>{trunc(u.user,isMobile?16:18)}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.perfil}</div></div>
-                <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{brl(u.rev)}</span>
-              </div>
-            ))}
-          </Panel>
-        </div>
-      )}
-
-      {/* NOVOS */}
-      {activeSection==="novos"&&(
-        <>
-          <div style={{background:"rgba(1,96,112,0.08)",border:"1px solid rgba(1,96,112,0.25)",borderRadius:12,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#5eead4",marginBottom:16}}>
-            💡 Boas-vindas apenas nas <strong>estações próprias</strong> (PW + CidAuto).
-          </div>
-          <NovosColapsavel novosNaRede={novosNaRede} novosNaEstacao={novosNaEstacao} getTel={getTel}/>
-        </>
-      )}
-
-      {/* VIP */}
-      {activeSection==="vip"&&(
-        <>
-          <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:12,padding:"12px 16px",marginBottom:14}}>
-            <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#60a5fa",marginBottom:8}}>📊 VIP Score</div>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8}}>
-              {[{status:"🟠 Em Risco",score:"26–50",cor:"#fb923c"},{status:"🔴 Churn",score:"0–25",cor:T.red},{status:"🟡 Regular",score:"51–75",cor:T.amber},{status:"🟢 Ativo",score:"76–100",cor:T.green}].map((s,i)=>(<div key={i} style={{background:`${s.cor}08`,border:`1px solid ${s.cor}25`,borderRadius:10,padding:"8px 10px"}}><div style={{fontFamily:T.sans,fontSize:11,fontWeight:700,color:s.cor,marginBottom:2}}>{s.status}</div><div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{s.score}</div></div>))}
-            </div>
-          </div>
-          <VipCategorias motoristasOrdenados={motoristasOrdenados} vipScores={vipScores} getTel={getTel}/>
-        </>
-      )}
-
-      {/* PARCEIROS */}
-      {activeSection==="parceiros"&&(
-        <>
-          <SectionLabel>Auditoria de Parceria</SectionLabel>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
-            <div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.25)",borderRadius:14,padding:"14px 16px"}}>
-              <div style={{fontFamily:T.mono,fontSize:9,color:T.blue,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>⚡ Volume</div>
-              <div style={{fontFamily:T.sans,fontSize:24,fontWeight:800,color:T.blue,marginBottom:3}}>{totalKwhParceiros.toFixed(0)} <span style={{fontSize:12}}>kWh</span></div>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{parceiros.length} parceiro(s) · {totalKwhGeral>0?(totalKwhParceiros/totalKwhGeral*100).toFixed(1):0}% do total</div>
-            </div>
-            <div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.25)",borderRadius:14,padding:"14px 16px"}}>
-              <div style={{fontFamily:T.mono,fontSize:9,color:T.amber,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>💰 Custo</div>
-              <div style={{fontFamily:T.sans,fontSize:24,fontWeight:800,color:T.amber,marginBottom:3}}>{brl(totalCustoParceiros)}</div>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Estimativa energética</div>
-            </div>
-            <div style={{background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:14,padding:"14px 16px"}}>
-              <div style={{fontFamily:T.mono,fontSize:9,color:T.red,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>📊 Potencial</div>
-              <div style={{fontFamily:T.sans,fontSize:24,fontWeight:800,color:T.red,marginBottom:3}}>{brl(totalPotencialParceiros)}</div>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Se cobrado à tarifa normal</div>
-            </div>
-          </div>
-          <Panel style={{padding:0,overflow:"hidden"}}>
-            <div onClick={()=>setParceirosExpanded(e=>!e)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer"}}>
-              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:600,color:T.text}}>📋 Detalhamento</div>
-              <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{parceirosExpanded?"▲":"▼"} ({parceiros.length})</span>
-            </div>
-            {parceirosExpanded&&(
-              <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:isMobile?360:undefined}}>
-                  <thead><tr><th style={TH}>Usuário</th><th style={THR}>kWh</th><th style={THR}>Custo</th><th style={THR}>Potencial</th></tr></thead>
-                  <tbody>
-                    {parceirosDetalhado.map(u=>(
-                      <tr key={u.user}><td style={TD}><span style={{fontWeight:500,fontSize:12}}>{trunc(u.user,isMobile?16:24)}</span></td>
-                        <td style={{...TDR,color:T.blue}}>{u.kwh.toFixed(1)}</td>
-                        <td style={{...TDR,color:T.amber}}>{brl(u.custo)}</td>
-                        <td style={{...TDR,color:T.red,fontWeight:600}}>{brl(u.potencial)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
-        </>
-      )}
-
-      {/* CUPONS */}
-      {activeSection==="cupons"&&(
-        <>
-          <div style={{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#fcd34d",marginBottom:16}}>
-            ℹ️ Cupons detectados automaticamente por preço abaixo de 90% da média.
-          </div>
-          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",background:T.bg2,borderRadius:16,overflow:"hidden",minWidth:isMobile?360:undefined}}>
-              <thead><tr><th style={TH}>Usuário</th><th style={TH}>Estação</th><th style={THR}>Preço</th><th style={THR}>Desc.</th></tr></thead>
-              <tbody>
-                {usersComCupom.length===0&&<tr><td colSpan={4} style={{...TD,textAlign:"center",color:T.text3,padding:"20px"}}>Nenhum cupom detectado</td></tr>}
-                {usersComCupom.map(u=>{
-                  const hk=u.localFreqKey;const preco=precosPraticados[hk]||0;
-                  const desc=preco>0?((1-(u.precoMedioKwh/preco))*100):0;
-                  return(<tr key={u.user}>
-                    <td style={TD}><span style={{fontWeight:500}}>{trunc(u.user,isMobile?14:20)}</span></td>
-                    <td style={{...TD,fontSize:11,color:T.text2}}>{trunc(hubNome(hk),12)}</td>
-                    <td style={{...TDR,color:T.amber}}>R${u.precoMedioKwh.toFixed(2)}</td>
-                    <td style={{...TDR,color:T.red,fontWeight:600}}>{desc.toFixed(0)}%</td>
-                  </tr>);
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 // ─── TAB DRE ─────────────────────────────────────────────────────────────────
 function TabDRE({sessions,appState}:{sessions:Session[];appState:AppState}){
@@ -3365,7 +3197,6 @@ export default function Home() {
 
   const TABS: { id: Tab; label: string; icon: string }[] = [
     { id: "dash",     label: "Dashboard", icon: "📊" },
-    { id: "usuarios", label: "Usuários",  icon: "👤" },
     { id: "dre",      label: "DRE",       icon: "💼" },
     { id: "acoes",    label: "Ações",     icon: "📤" },
     { id: "relatorio",label: "Relatórios",icon: "📋" },
@@ -3493,7 +3324,6 @@ export default function Home() {
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
         {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
-        {tab === "usuarios"  && <TabUsuarios sessions={sessions} appState={appState} />}
         {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
         {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
