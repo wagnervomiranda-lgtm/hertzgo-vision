@@ -797,7 +797,7 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
 }
 
 // ─── TAB DASHBOARD ───────────────────────────────────────────────────────────
-function TabDashboard({sessions,meta,onMetaChange}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void}){
+function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void;appState:AppState}){
   const isMobile=useIsMobile();
   const[activeHub,setActiveHub]=useState("__all__");
   const hubs=useMemo(()=>Array.from(new Set(sessions.map(s=>s.hubKey))).sort(),[sessions]);
@@ -3195,7 +3195,7 @@ export default function Home() {
 
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
-        {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} />}
+        {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
         {tab === "usuarios"  && <TabUsuarios sessions={sessions} appState={appState} />}
         {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
         {tab === "acoes"     && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
