@@ -1008,7 +1008,7 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
                     </div>
                     <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
                   </div>
-                ))})()
+                ))})()}
             </div>
           </div>
           {/* FATURAMENTO POR ESTAÇÃO */}
