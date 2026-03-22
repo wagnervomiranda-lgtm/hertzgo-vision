@@ -2025,7 +2025,7 @@ Limite restante: ${slotsLiv}/${limDia}`))return;
 // ─── IMPORTAR HISTÓRICO PANEL ────────────────────────────────────────────────
 function ImportarHistoricoPanel({sessions,localDisparos,onSaveDisparos,showToast,T,trunc}:{
   sessions:Session[];
-  localDisparos:{ts:string;nome:string;msgId:string;status:string;msg?:string}[];
+  localDisparos:{ts:string;nome:string;msgId:string;status:"ok"|"err";msg?:string}[];
   onSaveDisparos:(d:AppState["disparos"])=>void;
   showToast:(m:string)=>void;
   T:Record<string,string>;
