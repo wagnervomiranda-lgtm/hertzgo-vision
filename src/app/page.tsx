@@ -276,7 +276,6 @@ async function sbSaveBaseMestre(base: BaseMestre): Promise<void> {
     nome: u.nome,
     email: u.email || null,
     telefone: u.telefone || null,
-    hub_key: u.hubKey || null,
     atualizado_em: new Date().toISOString(),
   }));
   for (let i = 0; i < rows.length; i += 200) {
