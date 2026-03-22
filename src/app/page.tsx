@@ -1194,7 +1194,19 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
             const dispararRapido=async(users:string[],msgId:string)=>{
               if(disparandoAtencao)return;
               setDisparandoAtencao(true);
-              onDisparoRapido(users,msgId);
+              for(const nome of users){
+                const bm=appState.baseMestre[nome.toLowerCase()];
+                if(!bm?.temTel)continue;
+                const hubSess=sessions.filter(s=>s.user.toLowerCase()===nome.toLowerCase());
+                const hubCnt:Record<string,number>={};
+                hubSess.forEach(s=>{hubCnt[s.hubKey]=(hubCnt[s.hubKey]||0)+1;});
+                const hubK=Object.entries(hubCnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||"parkway";
+                const tplKey=msgId==="msg1"?"msg1":"msg_risco_parkway";
+                const tpl=(appState.mensagens[tplKey as keyof typeof appState.mensagens]||"") as string;
+                if(!tpl)continue;
+                const msg=tpl.replace(/\[nome\]/gi,nome.split(" ")[0]).replace(/\[local\]/gi,hubK);
+                try{await fetch("/api/zapi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:bm.telefone,message:msg})});}catch(e){console.error(e);}
+              }
               setSelAtencao(new Set());
               setTimeout(()=>setDisparandoAtencao(false),2000);
             };
@@ -4102,38 +4114,6 @@ export default function Home() {
     });
   },[sessions]);
 
-  // Disparo rápido do Dashboard — usa templates configurados
-  const onDisparoRapido = useCallback(async (users: string[], msgId: string) => {
-    const zapiId = appState.zapi?.instanceId;
-    const zapiToken = appState.zapi?.token;
-    const zapiClient = appState.zapi?.clientToken;
-    if(!zapiId||!zapiToken) return;
-    for(const nome of users){
-      const key = nome.toLowerCase();
-      const bm = appState.baseMestre[key];
-      if(!bm?.temTel) continue;
-      const tel = bm.telefone;
-      const hubSess = sessions.filter(s=>s.user.toLowerCase()===key);
-      const hubCnt: Record<string,number> = {};
-      hubSess.forEach(s=>{hubCnt[s.hubKey]=(hubCnt[s.hubKey]||0)+1;});
-      const hubK = Object.entries(hubCnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||"parkway";
-      const tplKey = msgId==="msg1"?"msg1":msgId==="msg_risco"?"msg_risco_parkway":"msg1";
-      const template = (appState.mensagens[tplKey as keyof typeof appState.mensagens]||"") as string;
-      if(!template) continue;
-      const ov = appState.userOverrides[key];
-      const msg = template
-        .replace(/\[nome\]/gi, nome.split(" ")[0])
-        .replace(/\[local\]/gi, hubK)
-        .replace(/\[preco_vip\]/gi, ov?.precoVip?`R$${ov.precoVip.toFixed(2)}`:"")
-        .replace(/\[dias\]/gi, String(Math.round((Date.now()-Math.max(...hubSess.map(s=>s.date.getTime())))/86400000)));
-      try{
-        await fetch("/api/zapi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:tel,message:msg,instanceId:zapiId,token:zapiToken,clientToken:zapiClient})});
-        const entry = {ts:new Date().toISOString(),nome,msgId,status:"ok" as const};
-        handleSave({disparos:[entry,...(appState.disparos||[]).slice(0,199)]});
-      }catch(e){console.error("Disparo rápido erro:",e);}
-    }
-  },[sessions,appState,handleSave]);
-
   const handleNewSessions = useCallback(async (newSessions: Session[]) => {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     const unique = newSessions.filter(s=>!existingKeys.has(`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
@@ -4312,7 +4292,7 @@ export default function Home() {
 
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
-        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} onDisparoRapido={onDisparoRapido} />}
+        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
         {tab === "dre"       && <TabDRE sessions={sessionsFiltradas} appState={appState} />}
         {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessionsFiltradas} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "acoes" && DEMO_MODE && (
