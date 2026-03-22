@@ -3896,6 +3896,26 @@ export default function Home() {
       .catch(e=>{console.error("Demo data error:",e);setDemoLoading(false);});
   },[DEMO_MODE]);
 
+  // Filtro de período
+  const sessionsFiltradas = useMemo(()=>{
+    if(!sessions.length) return sessions;
+    const agora = Date.now();
+    const cortes:{[k:string]:number} = {
+      "7d":   agora - 7  * 86400000,
+      "15d":  agora - 15 * 86400000,
+      "30d":  agora - 30 * 86400000,
+      "trimestre": agora - 90 * 86400000,
+      "tudo": 0,
+    };
+    if(periodoFiltro === "mes"){
+      const hoje = new Date();
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).getTime();
+      return sessions.filter(s => s.date.getTime() >= inicioMes);
+    }
+    if(periodoFiltro === "tudo") return sessions;
+    return sessions.filter(s => s.date.getTime() >= cortes[periodoFiltro]);
+  },[sessions, periodoFiltro]);
+
   const handleNewSessions = useCallback(async (newSessions: Session[]) => {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     const unique = newSessions.filter(s=>!existingKeys.has(`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
@@ -3993,6 +4013,20 @@ export default function Home() {
                 }}>{t.icon} {t.label}</button>
               ))}
             </nav>
+            <div style={{display:"flex",gap:2,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:2}}>
+              {(["7d","15d","mes","30d","trimestre","tudo"] as const).map(p=>{
+                const labels:{[k:string]:string}={"7d":"7d","15d":"15d","mes":"Mês","30d":"30d","trimestre":"90d","tudo":"Tudo"};
+                const ativo=p===periodoFiltro;
+                return(
+                  <button key={p} onClick={()=>setPeriodoFiltro(p)} style={{
+                    padding:"4px 8px",borderRadius:6,border:"none",cursor:"pointer",
+                    fontFamily:T.mono,fontSize:10,fontWeight:ativo?700:400,
+                    background:ativo?T.green:"transparent",
+                    color:ativo?"#000":T.text3,transition:"all .15s",
+                  }}>{labels[p]}</button>
+                );
+              })}
+            </div>
             <button onClick={() => setSessions([])} style={{
               background: "transparent", border: `1px solid ${T.border}`, color: T.text3,
               padding: "5px 12px", borderRadius: 8, fontSize: 11, cursor: "pointer", fontFamily: T.mono,
@@ -4034,9 +4068,9 @@ export default function Home() {
 
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
-        {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
-        {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
-        {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
+        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
+        {tab === "dre"       && <TabDRE sessions={sessionsFiltradas} appState={appState} />}
+        {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessionsFiltradas} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "acoes" && DEMO_MODE && (
           <div style={{padding:"60px 28px",textAlign:"center" as const,maxWidth:480,margin:"0 auto"}}>
             <div style={{fontSize:48,marginBottom:16}}>🔒</div>
@@ -4050,7 +4084,7 @@ export default function Home() {
             </a>
           </div>
         )}
-        {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={handleNewSessions} />}
+        {tab === "relatorio" && <TabRelatorio sessions={sessionsFiltradas} appState={appState} onAddSessions={handleNewSessions} />}
         {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
         {tab === "config"    && DEMO_MODE && (
           <div style={{padding:"40px 28px",textAlign:"center" as const}}>
@@ -4062,7 +4096,7 @@ export default function Home() {
             </a>
           </div>
         )}
-        {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} onSave={handleSave} />}
+        {tab === "goals"     && <TabGoals sessions={sessionsFiltradas} appState={appState} onSave={handleSave} />}
       </main>
 
       {/* ── CTA DEMO — aparece em todas as abas ── */}
