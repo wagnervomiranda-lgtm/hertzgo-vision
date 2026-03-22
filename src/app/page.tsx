@@ -299,7 +299,6 @@ async function sbLoadBaseMestre(): Promise<BaseMestre> {
       email: (r.email as string) || "",
       telefone: (r.telefone as string) || "",
       temTel: Boolean(r.telefone),
-      hubKey: (r.hub_key as string) || "",
     };
   });
   return base;
