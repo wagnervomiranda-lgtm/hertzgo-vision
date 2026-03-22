@@ -3926,10 +3926,8 @@ export default function Home() {
       try{
         const saved = await sbSaveSessoes(unique);
         console.log(`✅ Supabase: ${saved} sessões salvas`);
-        showToast(`✅ ${saved} sessões salvas no banco`);
       }catch(e){
         console.error("SB save:",e);
-        showToast("⚠️ Erro ao salvar no Supabase — dados só no browser");
       }finally{
         setSbSaving(false);
       }
