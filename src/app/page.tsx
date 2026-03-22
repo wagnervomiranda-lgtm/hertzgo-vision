@@ -4065,6 +4065,38 @@ export default function Home() {
         )}
       </header>
 
+      {/* ── ALERTA USUÁRIOS SEM CADASTRO ── */}
+      {semCadastro.length>0&&(
+        <div style={{
+          margin:"0 16px 0",padding:"10px 16px",
+          background:"rgba(255,171,0,0.08)",border:"1px solid rgba(255,171,0,0.25)",
+          borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",
+          gap:12,flexWrap:"wrap" as const,
+        }}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:16}}>📋</span>
+            <div>
+              <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#ffd54f"}}>
+                {semCadastro.length} usuário{semCadastro.length>1?"s":""} sem cadastro detectado{semCadastro.length>1?"s":""}
+              </span>
+              <div style={{fontFamily:T.mono,fontSize:10,color:"#ffcc02",marginTop:2}}>
+                {semCadastro.slice(0,3).join(" · ")}{semCadastro.length>3?` +${semCadastro.length-3} outros`:""}
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontFamily:T.mono,fontSize:10,color:"#ffab00"}}>
+              Exporte a Base Mestre da Spott e importe em Config → Contatos
+            </span>
+            <button onClick={()=>setSemCadastro([])} style={{
+              background:"transparent",border:"1px solid rgba(255,171,0,0.3)",
+              color:"#ffab00",padding:"3px 10px",borderRadius:6,
+              fontFamily:T.mono,fontSize:10,cursor:"pointer",
+            }}>✕</button>
+          </div>
+        </div>
+      )}
+
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
         {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
