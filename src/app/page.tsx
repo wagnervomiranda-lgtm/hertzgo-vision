@@ -4123,11 +4123,17 @@ export default function Home() {
   // Usuários sem cadastro na Base Mestre
   const semCadastroAlerta = useMemo(()=>{
     const nomes = Array.from(new Set(sessions.map(s=>s.user)));
+    const contatosTodos = Object.values(appState.contatos).flatMap(c => c.dados);
     return nomes.filter(nome=>{
-      const bm = appState.baseMestre[nome.toLowerCase()];
-      return !bm || !bm.temTel;
+      const key = nome.toLowerCase();
+      const bm = appState.baseMestre[key];
+      if(bm?.temTel) return false;
+      const noContatos = contatosTodos.some(d =>
+        d.telefone && (d.nome.toLowerCase().includes(key) || key.includes(d.nome.toLowerCase().trim()))
+      );
+      return !noContatos;
     });
-  },[sessions]);
+  },[sessions, appState.baseMestre, appState.contatos]);
 
   const handleNewSessions = useCallback(async (newSessions: Session[]) => {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
