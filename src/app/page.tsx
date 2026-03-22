@@ -195,6 +195,7 @@ const MSG_DEFAULT: Mensagens = {
 
 // ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
 // ─── SUPABASE HELPERS ────────────────────────────────────────────────────────
+type BaseMestre = Record<string, BaseMestreUsuario>;
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
