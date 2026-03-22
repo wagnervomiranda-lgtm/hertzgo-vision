@@ -977,8 +977,8 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
 }
 
 // ─── BRIEFING DIÁRIO ─────────────────────────────────────────────────────────
-function BriefingDiario({sessions,appState,meta,isMobile}:{
-  sessions:Session[];appState:AppState;meta:number;isMobile:boolean;
+function BriefingDiario({sessions,appState,meta,isMobile,onIrParaAcoes}:{
+  sessions:Session[];appState:AppState;meta:number;isMobile:boolean;onIrParaAcoes?:()=>void;
 }){
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
   const allTs=ok.map(s=>s.date.getTime());
@@ -1417,7 +1417,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         {hasMove&&<span style={{background:"rgba(59,130,246,0.1)",color:"#60a5fa",padding:"2px 7px",borderRadius:4,fontSize:9,border:"1px solid rgba(59,130,246,0.2)"}}>Move</span>}
       </div>
       {/* ── BRIEFING DIÁRIO ─────────────────────────────────────────── */}
-      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} />
+      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} onIrParaAcoes={()=>setTab("acoes")} />
 
             {/* TERMÔMETRO NEON — Receita Hoje vs Mês */}
       {(()=>{
@@ -2327,12 +2327,12 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
     return Math.abs(precoRecente-(ov.precoVip||0))<0.15;
   });
   const secoes=[
-    {id:"msg1",emoji:"📤",title:"MSG 1 — Qualificação",sub:"Novos não contatados",color:T.red,count:leads1.length,lista:leads1,msgKey:"msg1",cupomKey:"",msgId:"msg1"},
-    {id:"msg2a",emoji:"🟢",title:"MSG 2A — Migração",sub:"Motoristas Madeiro/Mamute → Park Way",color:T.green,count:motoristasMigracao.length,lista:motoristasMigracao,msgKey:"msg2a_parkway",cupomKey:"cupom_parkway",msgId:"msg2a"},
-    {id:"msg2b",emoji:"🛒",title:"MSG 2B — Fidelização",sub:"Não motoristas nas estações ativas",color:T.blue,count:fidelizacao.length,lista:fidelizacao,msgKey:"msg2b_parkway",cupomKey:"cupom_parkway",msgId:"msg2b"},
-    {id:"msg_vip",emoji:"🏆",title:"MSG VIP",sub:"Motoristas VIP ativos",color:T.amber,count:vipsAtivos.length,lista:vipsAtivos,msgKey:"msg2a_vip_parkway",cupomKey:"cupom_vip",msgId:"msg_vip"},
-    {id:"msg_risco",emoji:"🟠",title:"MSG Risco",sub:"VIPs com frequência caindo",color:"#fb923c",count:emRisco.length,lista:emRisco,msgKey:"msg_risco",cupomKey:"",msgId:"msg_risco"},
-    {id:"msg_churn",emoji:"🔴",title:"MSG Churn",sub:"Sumidos há 14+ dias",color:T.red,count:churned.length,lista:churned,msgKey:"msg_churn",cupomKey:"",msgId:"msg_churn"},
+    {id:"msg1",emoji:"📤",title:"🌱 Boas-vindas & Qualificação",sub:"Novos usuários ainda não contatados",color:T.red,count:leads1.length,lista:leads1,msgKey:"msg1",cupomKey:"",msgId:"msg1"},
+    {id:"msg2a",emoji:"🟢",title:"🚗 Convite Motorista — Park Way",sub:"Motoristas no Madeiro/Mamute a migrar",color:T.green,count:motoristasMigracao.length,lista:motoristasMigracao,msgKey:"msg2a_parkway",cupomKey:"cupom_parkway",msgId:"msg2a"},
+    {id:"msg2b",emoji:"🛒",title:"⭐ Fidelização",sub:"Clientes frequentes não-motoristas",color:T.blue,count:fidelizacao.length,lista:fidelizacao,msgKey:"msg2b_parkway",cupomKey:"cupom_parkway",msgId:"msg2b"},
+    {id:"msg_vip",emoji:"🏆",title:"👑 Reconhecimento VIP",sub:"Motoristas VIP ativos",color:T.amber,count:vipsAtivos.length,lista:vipsAtivos,msgKey:"msg2a_vip_parkway",cupomKey:"cupom_vip",msgId:"msg_vip"},
+    {id:"msg_risco",emoji:"🟠",title:"🔴 Reativação — Sumiu",sub:"VIPs com frequência caindo",color:"#fb923c",count:emRisco.length,lista:emRisco,msgKey:"msg_risco",cupomKey:"",msgId:"msg_risco"},
+    {id:"msg_churn",emoji:"🔴",title:"💔 Última Tentativa",sub:"Sumidos há 14+ dias",color:T.red,count:churned.length,lista:churned,msgKey:"msg_churn",cupomKey:"",msgId:"msg_churn"},
   ];
   const pad=isMobile?"16px 14px":"24px 28px";
   return(
