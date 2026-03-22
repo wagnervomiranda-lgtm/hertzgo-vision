@@ -211,10 +211,14 @@ async function sbFetch(path: string, opts: RequestInit = {}) {
         ...(opts.headers || {}),
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("sbFetch error:", res.status, path, err);
+      return null;
+    }
     const text = await res.text();
     return text ? JSON.parse(text) : null;
-  } catch { return null; }
+  } catch(e) { console.error("sbFetch exception:", path, e); return null; }
 }
 
 async function sbSaveSessoes(sessions: Session[]): Promise<number> {
@@ -233,12 +237,27 @@ async function sbSaveSessoes(sessions: Session[]): Promise<number> {
   }));
   let saved = 0;
   for (let i = 0; i < rows.length; i += 200) {
-    const res = await sbFetch("sessoes", {
-      method: "POST",
-      body: JSON.stringify(rows.slice(i, i + 200)),
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    });
-    if (res !== null || true) saved += rows.slice(i, i + 200).length;
+    const batch = rows.slice(i, i + 200);
+    try {
+      const res = await fetch(
+        `${SB_URL}/rest/v1/sessoes?on_conflict=usuario,data_sessao,value,energy`,
+        {
+          method: "POST",
+          headers: {
+            apikey: SB_KEY,
+            Authorization: `Bearer ${SB_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+          },
+          body: JSON.stringify(batch),
+        }
+      );
+      if (res.ok) saved += batch.length;
+      else {
+        const err = await res.text();
+        console.error("SB save sessoes error:", res.status, err);
+      }
+    } catch(e) { console.error("SB save sessoes fetch error:", e); }
   }
   return saved;
 }
