@@ -1261,7 +1261,7 @@ function ParceirosCard({ok,isMobile}:{ok:Session[];isMobile:boolean}){
 // ─── TAB DASHBOARD ───────────────────────────────────────────────────────────
 // ─── USUÁRIOS EM ATENÇÃO — componente com disparo rápido ─────────────────────
 function UsuariosAtencaoCard({motoristasRisco,novosHoje,appState,sessions,isMobile,vipScores2,trunc,T}:{
-  motoristasRisco:{user:string;rev:number;dates:Date[];hubKey:string}[];
+  motoristasRisco:{user:string;rev:number;dates:Date[];hubKey?:string}[];
   novosHoje:{user:string}[];
   appState:AppState;sessions:Session[];isMobile:boolean;
   vipScores2:Record<string,{diasSemRecarga:number}>;
