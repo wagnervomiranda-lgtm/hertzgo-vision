@@ -4086,7 +4086,7 @@ export default function Home() {
             <span style={{fontSize:16}}>📋</span>
             <div>
               <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#ffd54f"}}>
-                {semCadastroAlerta.length} usuário{semCadastroAlerta.length>1?"s":""} sem cadastro detectado{semCadastro.length>1?"s":""}
+                {semCadastroAlerta.length} usuário{semCadastroAlerta.length>1?"s":""} sem cadastro detectado{semCadastroAlerta.length>1?"s":""}
               </span>
               <div style={{fontFamily:T.mono,fontSize:10,color:"#ffcc02",marginTop:2}}>
                 {semCadastroAlerta.slice(0,3).join(" · ")}{semCadastroAlerta.length>3?` +${semCadastroAlerta.length-3} outros`:""}
