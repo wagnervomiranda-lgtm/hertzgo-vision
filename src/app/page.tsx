@@ -1908,8 +1908,6 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
             const dMaxAuto=appState.metas["crm_intervalo_max"]||8;
             const delayAutoMs=Math.floor(Math.random()*(dMaxAuto-dMinAuto+1)+dMinAuto)*60000;
             await new Promise(res=>setTimeout(res,delayAutoMs));
-            // Verificar limite antes de disparar automaticamente
-            const dispHojeAuto=data.filter((d:WebhookResposta)=>d.processado).length;
             enviarUm(nomeDisp,hubDisp,msgIdDisp,tpl);
           }
         }
