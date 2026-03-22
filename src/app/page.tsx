@@ -3679,4 +3679,253 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
   );
 }
 
-export default function Home(
+export default function Home() {
+  useFonts();
+  usePWA();
+  const isMobile = useIsMobile();
+  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [demoLoading, setDemoLoading] = useState(DEMO_MODE);
+  const [appState, setAppState] = useState<AppState>(loadState);
+  const [tab, setTab] = useState<Tab>("dash");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleSave = useCallback((partial: Partial<AppState>) => {
+    setAppState(prev => {
+      const next = { ...prev, ...partial };
+      // deep merge dreConfigs e contatos
+      if (partial.dreConfigs) next.dreConfigs = { ...prev.dreConfigs, ...partial.dreConfigs };
+      if (partial.contatos) next.contatos = { ...prev.contatos, ...partial.contatos };
+      if (partial.baseMestre) next.baseMestre = { ...prev.baseMestre, ...partial.baseMestre };
+      if (partial.userOverrides) next.userOverrides = { ...prev.userOverrides, ...partial.userOverrides };
+      if (partial.operadoresIgnorar !== undefined) next.operadoresIgnorar = partial.operadoresIgnorar;
+      if (partial.disparosManuaisHoje !== undefined) next.disparosManuaisHoje = partial.disparosManuaisHoje;
+      saveState(next);
+      return next;
+    });
+  }, []);
+
+  const meta = appState.metas["global"] || 0;
+  const onMetaChange = (v: number) => handleSave({ metas: { ...appState.metas, global: v } });
+
+  const TABS: { id: Tab; label: string; icon: string }[] = [
+    { id: "dash",     label: "Dashboard",    icon: "📊" },
+    { id: "goals",    label: "Inteligência", icon: "🧠" },
+    { id: "acoes",    label: "Ações",        icon: "📤" },
+    { id: "dre",      label: "DRE",          icon: "💼" },
+    { id: "relatorio",label: "Relatórios",   icon: "📋" },
+    { id: "config",   label: "Config",       icon: "⚙️"  },
+  ];
+
+  // Demo Mode — carrega dados fixos automaticamente
+  useEffect(()=>{
+    if(!DEMO_MODE||sessions.length>0)return;
+    fetch('/demo_data.json')
+      .then(r=>r.json())
+      .then((data:{d:string;hub:string;user:string;charger:string;e:number;v:number;h:number|null;dur:number|null;ok:boolean}[])=>{
+        const parsed:Session[]=data.map((s,i)=>{
+          const date=new Date(s.d);
+          const hubK=hubKey(s.hub);
+          return{
+            id:i,date,hub:s.hub,hubKey:hubK,user:s.user,charger:s.charger,
+            energy:s.e,value:s.v,duration:"",durMin:s.dur,
+            overstayMin:s.dur&&s.dur>90?s.dur-60:null,
+            startHour:s.h,status:s.ok?"Finalizado":"Cancelado",
+            cancelled:!s.ok,source:"spott" as const,
+          };
+        });
+        setSessions(parsed);
+        setDemoLoading(false);
+      })
+      .catch(e=>{console.error("Demo data error:",e);setDemoLoading(false);});
+  },[DEMO_MODE]);
+
+  if (!sessions.length && !DEMO_MODE && !demoLoading) {
+    return (
+      <div style={{ background: T.bg, minHeight: "100vh", color: T.text }}>
+        <style>{`
+          * { -webkit-tap-highlight-color: transparent; }
+          input, textarea, select { outline: none; }
+          ::-webkit-scrollbar { width: 4px; height: 4px; }
+          ::-webkit-scrollbar-track { background: transparent; }
+          ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+          @media (max-width: 767px) {
+            body { font-size: 14px; }
+          }
+        `}</style>
+        <UploadScreen onFile={setSessions} />
+      </div>
+    );
+  }
+
+  const activeLabel = TABS.find(t => t.id === tab)?.label || "";
+
+  return (
+    <div style={{ background: T.bg, minHeight: "100vh", color: T.text, fontFamily: T.sans }}>
+      <style>{`
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        input, textarea, select { outline: none; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+        @media (max-width: 767px) {
+          body { font-size: 14px; }
+        }
+      `}</style>
+
+      {/* ── HEADER ── */}
+      <header style={{
+        position: "sticky", top: 0, zIndex: 100,
+        background: "rgba(8,10,15,0.96)",
+        borderBottom: `1px solid ${T.border}`,
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      }}>
+        {isMobile ? (
+          /* HEADER MOBILE */
+          <div style={{ padding: "0 16px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <HertzGoLogo size={28} />
+              <div>
+                <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text3, letterSpacing: "0.15em", textTransform: "uppercase" }}>Vision</div>
+                <div style={{ fontFamily: T.sans, fontSize: 12, fontWeight: 700, color: T.text, lineHeight: 1 }}>{activeLabel}</div>
+              </div>
+            </div>
+            {/* Botão hamburguer */}
+            <button
+              onClick={() => setMenuOpen(o => !o)}
+              style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: T.text2, fontSize: 16, lineHeight: 1 }}
+            >
+              {menuOpen ? "✕" : "☰"}
+            </button>
+          </div>
+        ) : (
+          /* HEADER DESKTOP */
+          <div style={{ padding: "0 28px", height: 56, display: "flex", alignItems: "center", gap: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginRight: 32 }}>
+              <HertzGoLogo size={30} />
+              <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text3, letterSpacing: "0.18em", textTransform: "uppercase" }}>Vision v5.3</div>
+            </div>
+            <nav style={{ display: "flex", gap: 2, flex: 1 }}>
+              {TABS.map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  padding: "6px 14px", borderRadius: 8, border: "none",
+                  background: tab === t.id ? T.greenDim : "transparent",
+                  color: tab === t.id ? T.green : T.text2,
+                  fontFamily: T.mono, fontSize: 11, cursor: "pointer",
+                  fontWeight: tab === t.id ? 600 : 400,
+                  borderBottom: tab === t.id ? `2px solid ${T.green}` : "2px solid transparent",
+                }}>{t.icon} {t.label}</button>
+              ))}
+            </nav>
+            <button onClick={() => setSessions([])} style={{
+              background: "transparent", border: `1px solid ${T.border}`, color: T.text3,
+              padding: "5px 12px", borderRadius: 8, fontSize: 11, cursor: "pointer", fontFamily: T.mono,
+            }}>↩ Novo</button>
+          </div>
+        )}
+
+        {/* MENU MOBILE DROPDOWN */}
+        {isMobile && menuOpen && (
+          <div style={{
+            position: "absolute", top: 56, left: 0, right: 0,
+            background: T.bg1, borderBottom: `1px solid ${T.border}`,
+            zIndex: 200, padding: "8px 16px 16px",
+          }}>
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => { setTab(t.id); setMenuOpen(false); }} style={{
+                display: "flex", alignItems: "center", gap: 12, width: "100%",
+                padding: "12px 14px", marginBottom: 4,
+                borderRadius: 10, border: `1px solid ${tab === t.id ? T.green + "60" : T.border}`,
+                background: tab === t.id ? T.greenDim : "transparent",
+                color: tab === t.id ? T.green : T.text,
+                fontFamily: T.sans, fontSize: 14, fontWeight: tab === t.id ? 700 : 400,
+                cursor: "pointer", textAlign: "left",
+              }}>
+                <span style={{ fontSize: 18 }}>{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+            <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12, marginTop: 4 }}>
+              <button onClick={() => { setSessions([]); setMenuOpen(false); }} style={{
+                width: "100%", padding: "10px", borderRadius: 8,
+                border: `1px solid ${T.border}`, background: "transparent",
+                color: T.text3, fontFamily: T.mono, fontSize: 12, cursor: "pointer",
+              }}>↩ Carregar novo CSV</button>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* ── CONTEÚDO DAS ABAS ── */}
+      <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
+        {tab === "dash"      && <TabDashboard sessions={sessions} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
+        {tab === "dre"       && <TabDRE sessions={sessions} appState={appState} />}
+        {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessions} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
+        {tab === "acoes" && DEMO_MODE && (
+          <div style={{padding:"60px 28px",textAlign:"center" as const,maxWidth:480,margin:"0 auto"}}>
+            <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+            <div style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:T.text,marginBottom:8}}>Módulo CRM</div>
+            <div style={{fontFamily:T.mono,fontSize:12,color:T.text2,marginBottom:8,lineHeight:1.7}}>
+              Fila do Dia inteligente, disparo automático com intervalo humanizado, segmentação por LTV, identificação de motoristas via WhatsApp e muito mais.
+            </div>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text3,marginBottom:28}}>Disponível na versão completa.</div>
+            <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"inline-block",padding:"14px 32px",borderRadius:12,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:14,fontWeight:700,textDecoration:"none"}}>
+              💬 Quero o Vision completo
+            </a>
+          </div>
+        )}
+        {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
+        {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
+        {tab === "config"    && DEMO_MODE && (
+          <div style={{padding:"40px 28px",textAlign:"center" as const}}>
+            <div style={{fontSize:32,marginBottom:12}}>🔒</div>
+            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>Versão Demonstrativa</div>
+            <div style={{fontFamily:T.mono,fontSize:12,color:T.text2,marginBottom:20}}>Configurações não disponíveis nesta versão.</div>
+            <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"inline-block",padding:"12px 28px",borderRadius:12,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:14,fontWeight:700,textDecoration:"none"}}>
+              💬 Falar com Wagner
+            </a>
+          </div>
+        )}
+        {tab === "goals"     && <TabGoals sessions={sessions} appState={appState} onSave={handleSave} />}
+      </main>
+
+      {/* ── CTA DEMO — aparece em todas as abas ── */}
+      {DEMO_MODE&&(
+        <div style={{position:"fixed",bottom:isMobile?90:24,right:16,zIndex:200}}>
+          <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:50,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:13,fontWeight:700,textDecoration:"none",boxShadow:"0 4px 20px rgba(0,229,160,0.4)"}}>
+            💬 Falar com Wagner
+          </a>
+        </div>
+      )}
+
+      {/* ── BOTTOM NAV (MOBILE APENAS) ── */}
+      {isMobile && (
+        <nav style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+          background: "rgba(8,10,15,0.97)",
+          borderTop: `1px solid ${T.border}`,
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          display: "flex", paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => { setTab(t.id); setMenuOpen(false); }} style={{
+              flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 2, padding: "8px 2px",
+              background: "transparent", border: "none", cursor: "pointer",
+              borderTop: `2px solid ${tab === t.id ? T.green : "transparent"}`,
+            }}>
+              <span style={{ fontSize: 18, lineHeight: 1 }}>{t.icon}</span>
+              <span style={{
+                fontFamily: T.mono, fontSize: 9, letterSpacing: "0.08em",
+                color: tab === t.id ? T.green : T.text3,
+                fontWeight: tab === t.id ? 700 : 400,
+              }}>{t.label.slice(0, 6)}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+    </div>
+  );
+}
