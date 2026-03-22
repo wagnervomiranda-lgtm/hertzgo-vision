@@ -3817,6 +3817,7 @@ export default function Home() {
   const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sbLoading, setSbLoading] = useState(true);
+  const [sbSaving, setSbSaving] = useState(false);
   const [sbStatus, setSbStatus] = useState<"idle"|"ok"|"err">("idle");
   const [demoLoading, setDemoLoading] = useState(DEMO_MODE);
   const [appState, setAppState] = useState<AppState>(loadState);
@@ -3899,10 +3900,22 @@ export default function Home() {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     const unique = newSessions.filter(s=>!existingKeys.has(`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     setSessions([...sessions,...unique]);
-    if(unique.length>0) sbSaveSessoes(unique).catch(e=>console.error("SB save:",e));
+    if(unique.length>0){
+      setSbSaving(true);
+      try{
+        const saved = await sbSaveSessoes(unique);
+        console.log(`✅ Supabase: ${saved} sessões salvas`);
+        showToast(`✅ ${saved} sessões salvas no banco`);
+      }catch(e){
+        console.error("SB save:",e);
+        showToast("⚠️ Erro ao salvar no Supabase — dados só no browser");
+      }finally{
+        setSbSaving(false);
+      }
+    }
   },[sessions]);
 
-  if (!sessions.length && !DEMO_MODE && !demoLoading && !sbLoading) {
+  if (!sessions.length && !DEMO_MODE && !demoLoading && !sbLoading && !sbSaving) {
     return (
       <div style={{ background: T.bg, minHeight: "100vh", color: T.text }}>
         <style>{`
@@ -3966,7 +3979,7 @@ export default function Home() {
           <div style={{ padding: "0 28px", height: 56, display: "flex", alignItems: "center", gap: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginRight: 32 }}>
               <HertzGoLogo size={30} />
-              <div style={{ fontFamily: T.mono, fontSize: 9, color: sbLoading?T.amber:sbStatus==="err"?T.red:T.text3, letterSpacing: "0.18em", textTransform: "uppercase" }}>{sbLoading?"⏳ Carregando...":sbStatus==="err"?"⚠️ Offline":"Vision v5.5"}</div>
+              <div style={{ fontFamily: T.mono, fontSize: 9, color: sbLoading?T.amber:sbStatus==="err"?T.red:T.text3, letterSpacing: "0.18em", textTransform: "uppercase" }}>{sbLoading?"⏳ Carregando...":sbSaving?"💾 Salvando...":sbStatus==="err"?"⚠️ Offline":"Vision v5.5"}</div>
             </div>
             <nav style={{ display: "flex", gap: 2, flex: 1 }}>
               {TABS.map(t => (
