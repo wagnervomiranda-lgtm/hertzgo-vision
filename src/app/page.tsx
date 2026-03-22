@@ -2023,18 +2023,21 @@ Limite restante: ${slotsLiv}/${limDia}`))return;
 
 // ─── TAB AÇÕES ───────────────────────────────────────────────────────────────
 // ─── IMPORTAR HISTÓRICO PANEL ────────────────────────────────────────────────
-function ImportarHistoricoPanel({sessions,localDisparos,onSaveDisparos,showToast,T,trunc}:{
+function ImportarHistoricoPanel({sessions,localDisparos,onSaveDisparos,showToast,T,trunc,appState}:{
   sessions:Session[];
   localDisparos:{ts:string;nome:string;msgId:string;status:"ok"|"err";msg?:string}[];
   onSaveDisparos:(d:AppState["disparos"])=>void;
   showToast:(m:string)=>void;
   T:Record<string,string>;
   trunc:(s:string,n:number)=>string;
+  appState:AppState;
 }){
   const[histBusca,setHistBusca]=useState("");
   const[histSels,setHistSels]=useState<Record<string,{msgId:string;data:string}>>({});
   const[salvandoHist,setSalvandoHist]=useState(false);
-  const todosUsuarios=Array.from(new Set(sessions.map(s=>s.user))).sort();
+  const usuariosSessoes=Array.from(new Set(sessions.map(s=>s.user)));
+  const usuariosBM=Object.values(appState.baseMestre).map(u=>u.nome);
+  const todosUsuarios=Array.from(new Set([...usuariosSessoes,...usuariosBM])).sort();
   const filtrados=todosUsuarios.filter(n=>!histBusca||n.toLowerCase().includes(histBusca.toLowerCase())).slice(0,40);
   const jaRegistrado=(nome:string)=>localDisparos.some(d=>d.nome===nome&&(Date.now()-new Date(d.ts).getTime())<30*86400000);
   const salvarHistorico=()=>{
@@ -2378,7 +2381,7 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
         <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:14,lineHeight:1.7}}>
           Marque os usuários já contactados fora do sistema. Isso evita disparos duplicados.
         </div>
-        <ImportarHistoricoPanel sessions={sessions} localDisparos={localDisparos} onSaveDisparos={onSaveDisparos} showToast={showToast} T={T} trunc={trunc}/>
+        <ImportarHistoricoPanel sessions={sessions} localDisparos={localDisparos} onSaveDisparos={onSaveDisparos} showToast={showToast} T={T} trunc={trunc} appState={appState}/>
       </Panel>
 
       {/* ── REGISTRAR RESPOSTA MANUAL ──────────────────────────────── */}
