@@ -240,14 +240,14 @@ async function sbSaveSessoes(sessions: Session[]): Promise<number> {
     const batch = rows.slice(i, i + 200);
     try {
       const res = await fetch(
-        `${SB_URL}/rest/v1/sessoes?on_conflict=usuario,data_sessao,value,energy`,
+        `${SB_URL}/rest/v1/sessoes`,
         {
           method: "POST",
           headers: {
             apikey: SB_KEY,
             Authorization: `Bearer ${SB_KEY}`,
             "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal",
+            "Prefer": "resolution=ignore-duplicates,return=minimal",
           },
           body: JSON.stringify(batch),
         }
