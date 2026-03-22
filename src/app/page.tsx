@@ -3819,6 +3819,7 @@ export default function Home() {
   const [sbLoading, setSbLoading] = useState(true);
   const [sbSaving, setSbSaving] = useState(false);
   const [sbStatus, setSbStatus] = useState<"idle"|"ok"|"err">("idle");
+  const [periodoFiltro, setPeriodoFiltro] = useState<"7d"|"15d"|"30d"|"mes"|"trimestre"|"tudo">("mes");
   const [demoLoading, setDemoLoading] = useState(DEMO_MODE);
   const [appState, setAppState] = useState<AppState>(loadState);
   const [tab, setTab] = useState<Tab>("dash");
