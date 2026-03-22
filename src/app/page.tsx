@@ -3917,6 +3917,15 @@ export default function Home() {
     return sessions.filter(s => s.date.getTime() >= cortes[periodoFiltro]);
   },[sessions, periodoFiltro]);
 
+  // Usuários sem cadastro na Base Mestre
+  const semCadastroAlerta = useMemo(()=>{
+    const nomes = [...new Set(sessions.map(s=>s.user))];
+    return nomes.filter(nome=>{
+      const bm = appState.baseMestre[nome.toLowerCase()];
+      return !bm || !bm.temTel;
+    });
+  },[sessions]);
+
   const handleNewSessions = useCallback(async (newSessions: Session[]) => {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     const unique = newSessions.filter(s=>!existingKeys.has(`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
@@ -4066,7 +4075,7 @@ export default function Home() {
       </header>
 
       {/* ── ALERTA USUÁRIOS SEM CADASTRO ── */}
-      {semCadastro.length>0&&(
+      {semCadastroAlerta.length>0&&(
         <div style={{
           margin:"0 16px 0",padding:"10px 16px",
           background:"rgba(255,171,0,0.08)",border:"1px solid rgba(255,171,0,0.25)",
@@ -4077,10 +4086,10 @@ export default function Home() {
             <span style={{fontSize:16}}>📋</span>
             <div>
               <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#ffd54f"}}>
-                {semCadastro.length} usuário{semCadastro.length>1?"s":""} sem cadastro detectado{semCadastro.length>1?"s":""}
+                {semCadastroAlerta.length} usuário{semCadastroAlerta.length>1?"s":""} sem cadastro detectado{semCadastro.length>1?"s":""}
               </span>
               <div style={{fontFamily:T.mono,fontSize:10,color:"#ffcc02",marginTop:2}}>
-                {semCadastro.slice(0,3).join(" · ")}{semCadastro.length>3?` +${semCadastro.length-3} outros`:""}
+                {semCadastroAlerta.slice(0,3).join(" · ")}{semCadastroAlerta.length>3?` +${semCadastroAlerta.length-3} outros`:""}
               </div>
             </div>
           </div>
@@ -4088,11 +4097,7 @@ export default function Home() {
             <span style={{fontFamily:T.mono,fontSize:10,color:"#ffab00"}}>
               Exporte a Base Mestre da Spott e importe em Config → Contatos
             </span>
-            <button onClick={()=>setSemCadastro([])} style={{
-              background:"transparent",border:"1px solid rgba(255,171,0,0.3)",
-              color:"#ffab00",padding:"3px 10px",borderRadius:6,
-              fontFamily:T.mono,fontSize:10,cursor:"pointer",
-            }}>✕</button>
+
           </div>
         </div>
       )}
