@@ -896,6 +896,8 @@ function Semaforo({sessions}:{sessions:Session[]}){
 
 // ─── PROJEÇÃO MENSAL ─────────────────────────────────────────────────────────
 function ProjecaoMensal({sessions,meta,onMetaChange}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void}){
+  const[editando,setEditando]=useState(false);
+  const[metaInput,setMetaInput]=useState(String(meta));
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
   if(!ok.length)return null;
   const days=new Set(ok.map(s=>s.date.toDateString())).size||1;
@@ -914,14 +916,12 @@ function ProjecaoMensal({sessions,meta,onMetaChange}:{sessions:Session[];meta:nu
   const metaColor=pctMeta>=100?T.green:pctMeta>=75?T.amber:T.red;
   const gerarInsight=():string=>{
     if(meta===0)return"Configure uma meta mensal para ativar o pacing inteligente.";
-    if(pctMeta>=110)return`🚀 Projeção ${pctMeta.toFixed(0)}% da meta. Vai superar em R$\u00a0${(projRev-meta).toFixed(0)}.`;
+    if(pctMeta>=110)return`🚀 Projeção ${pctMeta.toFixed(0)}% da meta. Vai superar em R$ ${(projRev-meta).toFixed(0)}.`;
     if(pctMeta>=100)return`✅ No alvo — mantenha ${avgSessDay.toFixed(1)} sessões/dia.`;
-    if(pctMeta>=75){if(ritmoDiff>0)return`⚠️ Precisa de R$\u00a0${ritmoNecessario.toFixed(0)}/dia nos próximos ${diasRestantes} dias.`;return`⚠️ Projeção em ${pctMeta.toFixed(0)}%. Faltam R$\u00a0${faltaMeta.toFixed(0)} — ${diasRestantes} dias.`;}
+    if(pctMeta>=75){if(ritmoDiff>0)return`⚠️ Precisa de R$ ${ritmoNecessario.toFixed(0)}/dia nos próximos ${diasRestantes} dias.`;return`⚠️ Projeção em ${pctMeta.toFixed(0)}%. Faltam R$ ${faltaMeta.toFixed(0)} — ${diasRestantes} dias.`;}
     return`🔴 Ritmo crítico — ${pctMeta.toFixed(0)}% da meta.`;
   };
-  const[editando,setEditando]=useState(false);
-  const[metaInput,setMetaInput]=useState(String(meta));
-  return(
+    return(
     <div style={{marginBottom:20,background:T.bg2,border:`1px solid ${T.border}`,borderRadius:16,overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>🔮</span><div><div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text}}>Projeção do Mês</div><div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{days} dias · {diasRestantes}d restantes</div></div></div>
@@ -1185,98 +1185,7 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
             </div>
           </div>
           {/* USUÁRIOS EM ATENÇÃO — disparo rápido */}
-          {(motoristasRisco.length>0||novosHoje.length>0)&&(()=>{
-            const[selAtencao,setSelAtencao]=React.useState<Set<string>>(new Set());
-            const[disparandoAtencao,setDisparandoAtencao]=React.useState(false);
-            const toggleSel=(nome:string)=>setSelAtencao(prev=>{const n=new Set(prev);n.has(nome)?n.delete(nome):n.add(nome);return n;});
-            const jaContactado=(nome:string,msgId:string)=>(appState.disparos||[]).some((d:{nome:string;msgId:string;ts:string})=>d.nome===nome&&d.msgId===msgId&&(Date.now()-new Date(d.ts).getTime())<7*86400000);
-            const hasTel=(nome:string)=>!!(appState.baseMestre[nome.toLowerCase()]?.temTel);
-            const dispararRapido=async(users:string[],msgId:string)=>{
-              if(disparandoAtencao)return;
-              setDisparandoAtencao(true);
-              for(const nome of users){
-                const bm=appState.baseMestre[nome.toLowerCase()];
-                if(!bm?.temTel)continue;
-                const hubSess=sessions.filter(s=>s.user.toLowerCase()===nome.toLowerCase());
-                const hubCnt:Record<string,number>={};
-                hubSess.forEach(s=>{hubCnt[s.hubKey]=(hubCnt[s.hubKey]||0)+1;});
-                const hubK=Object.entries(hubCnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||"parkway";
-                const tplKey=msgId==="msg1"?"msg1":"msg_risco_parkway";
-                const tpl=(appState.mensagens[tplKey as keyof typeof appState.mensagens]||"") as string;
-                if(!tpl)continue;
-                const msg=tpl.replace(/\[nome\]/gi,nome.split(" ")[0]).replace(/\[local\]/gi,hubK);
-                try{await fetch("/api/zapi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:bm.telefone,message:msg})});}catch(e){console.error(e);}
-              }
-              setSelAtencao(new Set());
-              setTimeout(()=>setDisparandoAtencao(false),2000);
-            };
-            return(
-              <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const}}>Usuários em Atenção</div>
-                  {selAtencao.size>0&&(
-                    <div style={{display:"flex",gap:6}}>
-                      <button onClick={()=>dispararRapido(Array.from(selAtencao),"msg_risco")} disabled={disparandoAtencao} style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:T.red,fontFamily:T.mono,fontSize:10,cursor:"pointer"}}>
-                        📤 MSG Risco ({selAtencao.size})
-                      </button>
-                      <button onClick={()=>setSelAtencao(new Set())} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.text3,fontFamily:T.mono,fontSize:10,cursor:"pointer"}}>✕</button>
-                    </div>
-                  )}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
-                  {motoristasRisco.length>0&&(
-                    <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.red,marginBottom:6}}>🔴 Motoristas em Risco</div>
-                      {[...motoristasRisco].sort((a,b)=>b.rev-a.rev).slice(0,5).map(u=>{
-                        const ltvMes=u.rev/Math.max(1,(u.dates.length>1?(u.dates[u.dates.length-1].getTime()-u.dates[0].getTime())/2592000000:1));
-                        const urgencia=ltvMes>500?"🔴":ltvMes>200?"🟡":"⚪";
-                        const checked=selAtencao.has(u.user);
-                        const contato=jaContactado(u.user,"msg_risco");
-                        const tel=hasTel(u.user);
-                        return(
-                          <div key={u.user} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                            <input type="checkbox" checked={checked} onChange={()=>toggleSel(u.user)} disabled={!tel} style={{accentColor:T.red,cursor:tel?"pointer":"not-allowed",flexShrink:0}}/>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,display:"flex",justifyContent:"space-between",gap:4}}>
-                                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{urgencia} {trunc(u.user,14)}</span>
-                                <span style={{color:T.red,flexShrink:0}}>{vipScores2[u.user]?.diasSemRecarga}d</span>
-                              </div>
-                              {contato&&<div style={{fontFamily:T.mono,fontSize:8,color:T.amber}}>⚡ contactado &lt;7d</div>}
-                              {!tel&&<div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>sem telefone</div>}
-                            </div>
-                            {tel&&!contato&&<button onClick={()=>dispararRapido([u.user],"msg_risco")} style={{padding:"2px 8px",borderRadius:5,border:"1px solid rgba(239,68,68,0.3)",background:"rgba(239,68,68,0.08)",color:T.red,fontFamily:T.mono,fontSize:9,cursor:"pointer",flexShrink:0}}>📤</button>}
-                          </div>
-                        );
-                      })}
-                      {motoristasRisco.length>5&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{motoristasRisco.length-5} outros</div>}
-                    </div>
-                  )}
-                  {novosHoje.length>0&&(
-                    <div style={{background:"rgba(1,96,112,0.06)",border:"1px solid rgba(1,96,112,0.2)",borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.teal,marginBottom:6}}>🌱 Novos esta semana</div>
-                      {novosHoje.slice(0,4).map(u=>{
-                        const checked=selAtencao.has(u.user);
-                        const contato=jaContactado(u.user,"msg1");
-                        const tel=hasTel(u.user);
-                        return(
-                          <div key={u.user} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                            <input type="checkbox" checked={checked} onChange={()=>toggleSel(u.user)} disabled={!tel} style={{cursor:tel?"pointer":"not-allowed",flexShrink:0}}/>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{u.user}</div>
-                              {contato&&<div style={{fontFamily:T.mono,fontSize:8,color:T.amber}}>⚡ contactado &lt;7d</div>}
-                              {!tel&&<div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>sem telefone</div>}
-                            </div>
-                            {tel&&!contato&&<button onClick={()=>dispararRapido([u.user],"msg1")} style={{padding:"2px 8px",borderRadius:5,border:"1px solid rgba(1,96,112,0.3)",background:"rgba(1,96,112,0.08)",color:T.teal,fontFamily:T.mono,fontSize:9,cursor:"pointer",flexShrink:0}}>📤</button>}
-                          </div>
-                        );
-                      })}
-                      {novosHoje.length>4&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{novosHoje.length-4} outros</div>}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
+          <UsuariosAtencaoCard motoristasRisco={motoristasRisco} novosHoje={novosHoje} appState={appState} sessions={sessions} isMobile={isMobile} vipScores2={vipScores2} trunc={trunc} T={T}/>
           {/* AÇÕES */}
           {acoesAtivas.length>0?(
             <div style={{padding:"12px 16px"}}>
@@ -1350,6 +1259,102 @@ function ParceirosCard({ok,isMobile}:{ok:Session[];isMobile:boolean}){
 }
 
 // ─── TAB DASHBOARD ───────────────────────────────────────────────────────────
+// ─── USUÁRIOS EM ATENÇÃO — componente com disparo rápido ─────────────────────
+function UsuariosAtencaoCard({motoristasRisco,novosHoje,appState,sessions,isMobile,vipScores2,trunc,T}:{
+  motoristasRisco:{user:string;rev:number;dates:Date[];hubKey:string}[];
+  novosHoje:{user:string}[];
+  appState:AppState;sessions:Session[];isMobile:boolean;
+  vipScores2:Record<string,{diasSemRecarga:number}>;
+  trunc:(s:string,n:number)=>string;T:Record<string,string>;
+}){
+  const[selAtencao,setSelAtencao]=useState<Set<string>>(new Set());
+  const[disparandoAtencao,setDisparandoAtencao]=useState(false);
+  const toggleSel=(nome:string)=>setSelAtencao(prev=>{const n=new Set(prev);n.has(nome)?n.delete(nome):n.add(nome);return n;});
+  const jaContactado=(nome:string,msgId:string)=>(appState.disparos||[]).some((d:{nome:string;msgId:string;ts:string})=>d.nome===nome&&d.msgId===msgId&&(Date.now()-new Date(d.ts).getTime())<7*86400000);
+  const hasTel=(nome:string)=>!!(appState.baseMestre[nome.toLowerCase()]?.temTel);
+  const dispararRapido=async(users:string[],msgId:string)=>{
+    if(disparandoAtencao)return;
+    setDisparandoAtencao(true);
+    for(const nome of users){
+      const bm=appState.baseMestre[nome.toLowerCase()];
+      if(!bm?.temTel)continue;
+      const hubSess=sessions.filter(s=>s.user.toLowerCase()===nome.toLowerCase());
+      const hubCnt:Record<string,number>={};
+      hubSess.forEach(s=>{hubCnt[s.hubKey]=(hubCnt[s.hubKey]||0)+1;});
+      const hubK=Object.entries(hubCnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||"parkway";
+      const tplKey=msgId==="msg1"?"msg1":"msg_risco_parkway";
+      const tpl=(appState.mensagens[tplKey as keyof typeof appState.mensagens]||"") as string;
+      if(!tpl)continue;
+      const msg=tpl.replace(/\[nome\]/gi,nome.split(" ")[0]).replace(/\[local\]/gi,hubK);
+      try{await fetch("/api/zapi",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({phone:bm.telefone,message:msg})});}catch(e){console.error(e);}
+    }
+    setSelAtencao(new Set());
+    setTimeout(()=>setDisparandoAtencao(false),2000);
+  };
+  if(!motoristasRisco.length&&!novosHoje.length)return null;
+  return(
+    <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const}}>Usuários em Atenção</div>
+        {selAtencao.size>0&&(
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>dispararRapido(Array.from(selAtencao),"msg_risco")} disabled={disparandoAtencao} style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:T.red,fontFamily:T.mono,fontSize:10,cursor:"pointer"}}>📤 MSG Risco ({selAtencao.size})</button>
+            <button onClick={()=>setSelAtencao(new Set())} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.text3,fontFamily:T.mono,fontSize:10,cursor:"pointer"}}>✕</button>
+          </div>
+        )}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
+        {motoristasRisco.length>0&&(
+          <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 12px"}}>
+            <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.red,marginBottom:6}}>🔴 Motoristas em Risco</div>
+            {[...motoristasRisco].sort((a,b)=>b.rev-a.rev).slice(0,5).map(u=>{
+              const ltvMes=u.rev/Math.max(1,(u.dates.length>1?(u.dates[u.dates.length-1].getTime()-u.dates[0].getTime())/2592000000:1));
+              const urgencia=ltvMes>500?"🔴":ltvMes>200?"🟡":"⚪";
+              const tel=hasTel(u.user);
+              const contato=jaContactado(u.user,"msg_risco");
+              return(
+                <div key={u.user} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                  <input type="checkbox" checked={selAtencao.has(u.user)} onChange={()=>toggleSel(u.user)} disabled={!tel} style={{accentColor:T.red,cursor:tel?"pointer":"not-allowed",flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,display:"flex",justifyContent:"space-between",gap:4}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{urgencia} {trunc(u.user,14)}</span>
+                      <span style={{color:T.red,flexShrink:0}}>{vipScores2[u.user]?.diasSemRecarga}d</span>
+                    </div>
+                    {contato&&<div style={{fontFamily:T.mono,fontSize:8,color:T.amber}}>⚡ contactado &lt;7d</div>}
+                    {!tel&&<div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>sem telefone</div>}
+                  </div>
+                  {tel&&!contato&&<button onClick={()=>dispararRapido([u.user],"msg_risco")} style={{padding:"2px 8px",borderRadius:5,border:"1px solid rgba(239,68,68,0.3)",background:"rgba(239,68,68,0.08)",color:T.red,fontFamily:T.mono,fontSize:9,cursor:"pointer",flexShrink:0}}>📤</button>}
+                </div>
+              );
+            })}
+            {motoristasRisco.length>5&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{motoristasRisco.length-5} outros</div>}
+          </div>
+        )}
+        {novosHoje.length>0&&(
+          <div style={{background:"rgba(1,96,112,0.06)",border:"1px solid rgba(1,96,112,0.2)",borderRadius:10,padding:"10px 12px"}}>
+            <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.teal,marginBottom:6}}>🌱 Novos esta semana</div>
+            {novosHoje.slice(0,4).map(u=>{
+              const tel=hasTel(u.user);
+              const contato=jaContactado(u.user,"msg1");
+              return(
+                <div key={u.user} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                  <input type="checkbox" checked={selAtencao.has(u.user)} onChange={()=>toggleSel(u.user)} disabled={!tel} style={{cursor:tel?"pointer":"not-allowed",flexShrink:0}}/>
+                  <div style={{flex:1,fontFamily:T.mono,fontSize:10,color:T.text2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{u.user}</div>
+                  {contato&&<div style={{fontFamily:T.mono,fontSize:8,color:T.amber}}>⚡ &lt;7d</div>}
+                  {!tel&&<div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>sem tel</div>}
+                  {tel&&!contato&&<button onClick={()=>dispararRapido([u.user],"msg1")} style={{padding:"2px 8px",borderRadius:5,border:"1px solid rgba(1,96,112,0.3)",background:"rgba(1,96,112,0.08)",color:T.teal,fontFamily:T.mono,fontSize:9,cursor:"pointer",flexShrink:0}}>📤</button>}
+                </div>
+              );
+            })}
+            {novosHoje.length>4&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>+{novosHoje.length-4} outros</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void;appState:AppState}){
   const isMobile=useIsMobile();
   const[activeHub,setActiveHub]=useState("__all__");
@@ -2017,6 +2022,79 @@ Limite restante: ${slotsLiv}/${limDia}`))return;
 }
 
 // ─── TAB AÇÕES ───────────────────────────────────────────────────────────────
+// ─── IMPORTAR HISTÓRICO PANEL ────────────────────────────────────────────────
+function ImportarHistoricoPanel({sessions,localDisparos,onSaveDisparos,showToast,T,trunc}:{
+  sessions:Session[];
+  localDisparos:{ts:string;nome:string;msgId:string;status:string;msg?:string}[];
+  onSaveDisparos:(d:AppState["disparos"])=>void;
+  showToast:(m:string)=>void;
+  T:Record<string,string>;
+  trunc:(s:string,n:number)=>string;
+}){
+  const[histBusca,setHistBusca]=useState("");
+  const[histSels,setHistSels]=useState<Record<string,{msgId:string;data:string}>>({});
+  const[salvandoHist,setSalvandoHist]=useState(false);
+  const todosUsuarios=Array.from(new Set(sessions.map(s=>s.user))).sort();
+  const filtrados=todosUsuarios.filter(n=>!histBusca||n.toLowerCase().includes(histBusca.toLowerCase())).slice(0,40);
+  const jaRegistrado=(nome:string)=>localDisparos.some(d=>d.nome===nome&&(Date.now()-new Date(d.ts).getTime())<30*86400000);
+  const salvarHistorico=()=>{
+    setSalvandoHist(true);
+    const novosEntries=Object.entries(histSels).map(([nome,{msgId,data}])=>({
+      ts:new Date(data+"T12:00:00").toISOString(),nome,msgId,status:"ok" as const,msg:"importado manualmente"
+    }));
+    const updated=[...novosEntries,...localDisparos.slice(0,200-novosEntries.length)];
+    onSaveDisparos(updated);
+    setHistSels({});
+    setSalvandoHist(false);
+    showToast(`✅ ${novosEntries.length} registros importados`);
+  };
+  return(
+    <div>
+      <input type="text" placeholder="Buscar usuário..." value={histBusca} onChange={e=>setHistBusca(e.target.value)}
+        style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 12px",borderRadius:8,fontFamily:T.mono,fontSize:12,marginBottom:12}}/>
+      <div style={{maxHeight:260,overflowY:"auto" as const,marginBottom:12}}>
+        {filtrados.map(nome=>{
+          const sel=histSels[nome];
+          const jaReg=jaRegistrado(nome);
+          return(
+            <div key={nome} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
+              <input type="checkbox" checked={!!sel} onChange={e=>{
+                if(e.target.checked) setHistSels(p=>({...p,[nome]:{msgId:"msg1",data:new Date().toISOString().slice(0,10)}}));
+                else setHistSels(p=>{const n={...p};delete n[nome];return n;});
+              }} style={{flexShrink:0,cursor:"pointer"}}/>
+              <div style={{flex:1,fontFamily:T.mono,fontSize:11,color:jaReg?T.text3:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{trunc(nome,26)}</div>
+              {sel&&(
+                <select value={sel.msgId} onChange={e=>setHistSels(p=>({...p,[nome]:{...p[nome],msgId:e.target.value}}))}
+                  style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"3px 6px",borderRadius:6,fontFamily:T.mono,fontSize:10}}>
+                  <option value="msg1">MSG 1</option>
+                  <option value="msg2a">MSG 2A — motorista</option>
+                  <option value="msg2b">MSG 2B — não motorista</option>
+                  <option value="msg_risco">MSG Risco</option>
+                  <option value="msg_vip">MSG VIP</option>
+                </select>
+              )}
+              {sel&&(
+                <input type="date" value={sel.data} onChange={e=>setHistSels(p=>({...p,[nome]:{...p[nome],data:e.target.value}}))}
+                  style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"3px 6px",borderRadius:6,fontFamily:T.mono,fontSize:10}}/>
+              )}
+              {jaReg&&!sel&&<span style={{fontFamily:T.mono,fontSize:9,color:T.amber,flexShrink:0}}>✓ registrado</span>}
+            </div>
+          );
+        })}
+        {todosUsuarios.length>40&&!histBusca&&<div style={{fontFamily:T.mono,fontSize:10,color:T.text3,padding:"8px 0",textAlign:"center" as const}}>Use a busca — {todosUsuarios.length} usuários no total</div>}
+      </div>
+      {Object.keys(histSels).length>0&&(
+        <button onClick={salvarHistorico} disabled={salvandoHist} style={{
+          padding:"8px 20px",borderRadius:8,border:"1px solid rgba(0,230,118,0.3)",
+          background:"rgba(0,230,118,0.08)",color:T.green,fontFamily:T.mono,fontSize:12,
+          fontWeight:700,cursor:"pointer",
+        }}>💾 Salvar {Object.keys(histSels).length} registro{Object.keys(histSels).length>1?"s":""}</button>
+      )}
+    </div>
+  );
+}
+
+
 function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void;onSaveState:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
@@ -2298,73 +2376,9 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
       <SectionLabel>📋 Importar Histórico de Contatos</SectionLabel>
       <Panel style={{marginBottom:24}}>
         <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:14,lineHeight:1.7}}>
-          Marque os usuários que já foram contactados fora do sistema (WhatsApp direto, ligação, conversa pessoal).
-          Isso evita disparos duplicados e mantém o histórico real.
+          Marque os usuários já contactados fora do sistema. Isso evita disparos duplicados.
         </div>
-        {(()=>{
-          const[histBusca,setHistBusca]=useState("");
-          const[histSels,setHistSels]=useState<Record<string,{msgId:string;data:string}>>({});
-          const[salvandoHist,setSalvandoHist]=useState(false);
-          const todosUsuarios=Array.from(new Set(sessions.map(s=>s.user))).sort();
-          const filtrados=todosUsuarios.filter(n=>!histBusca||n.toLowerCase().includes(histBusca.toLowerCase())).slice(0,40);
-          const jaRegistrado=(nome:string)=>localDisparos.some(d=>d.nome===nome&&(Date.now()-new Date(d.ts).getTime())<30*86400000);
-          const salvarHistorico=()=>{
-            setSalvandoHist(true);
-            const novosEntries=Object.entries(histSels).map(([nome,{msgId,data}])=>({
-              ts:new Date(data+"T12:00:00").toISOString(),nome,msgId,status:"ok" as const,msg:"importado manualmente"
-            }));
-            const updated=[...novosEntries,...localDisparos.slice(0,200-novosEntries.length)];
-            setLocalDisparos(updated);
-            onSaveDisparos(updated);
-            setHistSels({});
-            setSalvandoHist(false);
-            showToast(`✅ ${novosEntries.length} registros importados`);
-          };
-          return(
-            <div>
-              <input type="text" placeholder="Buscar usuário..." value={histBusca} onChange={e=>setHistBusca(e.target.value)}
-                style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 12px",borderRadius:8,fontFamily:T.mono,fontSize:12,marginBottom:12}}/>
-              <div style={{maxHeight:260,overflowY:"auto" as const,marginBottom:12}}>
-                {filtrados.map(nome=>{
-                  const sel=histSels[nome];
-                  const jaReg=jaRegistrado(nome);
-                  return(
-                    <div key={nome} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
-                      <input type="checkbox" checked={!!sel} onChange={e=>{
-                        if(e.target.checked) setHistSels(p=>({...p,[nome]:{msgId:"msg1",data:new Date().toISOString().slice(0,10)}}));
-                        else setHistSels(p=>{const n={...p};delete n[nome];return n;});
-                      }} style={{flexShrink:0,cursor:"pointer"}}/>
-                      <div style={{flex:1,fontFamily:T.mono,fontSize:11,color:jaReg?T.text3:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{trunc(nome,26)}</div>
-                      {sel&&(
-                        <select value={sel.msgId} onChange={e=>setHistSels(p=>({...p,[nome]:{...p[nome],msgId:e.target.value}}))}
-                          style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"3px 6px",borderRadius:6,fontFamily:T.mono,fontSize:10}}>
-                          <option value="msg1">MSG 1</option>
-                          <option value="msg2a">MSG 2A — motorista</option>
-                          <option value="msg2b">MSG 2B — não motorista</option>
-                          <option value="msg_risco">MSG Risco</option>
-                          <option value="msg_vip">MSG VIP</option>
-                        </select>
-                      )}
-                      {sel&&(
-                        <input type="date" value={sel.data} onChange={e=>setHistSels(p=>({...p,[nome]:{...p[nome],data:e.target.value}}))}
-                          style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"3px 6px",borderRadius:6,fontFamily:T.mono,fontSize:10}}/>
-                      )}
-                      {jaReg&&!sel&&<span style={{fontFamily:T.mono,fontSize:9,color:T.amber,flexShrink:0}}>✓ registrado</span>}
-                    </div>
-                  );
-                })}
-                {todosUsuarios.length>40&&!histBusca&&<div style={{fontFamily:T.mono,fontSize:10,color:T.text3,padding:"8px 0",textAlign:"center" as const}}>Use a busca — {todosUsuarios.length} usuários no total</div>}
-              </div>
-              {Object.keys(histSels).length>0&&(
-                <button onClick={salvarHistorico} disabled={salvandoHist} style={{
-                  padding:"8px 20px",borderRadius:8,border:"1px solid rgba(0,230,118,0.3)",
-                  background:"rgba(0,230,118,0.08)",color:T.green,fontFamily:T.mono,fontSize:12,
-                  fontWeight:700,cursor:"pointer",
-                }}>💾 Salvar {Object.keys(histSels).length} registro{Object.keys(histSels).length>1?"s":""}</button>
-              )}
-            </div>
-          );
-        })()}
+        <ImportarHistoricoPanel sessions={sessions} localDisparos={localDisparos} onSaveDisparos={onSaveDisparos} showToast={showToast} T={T} trunc={trunc}/>
       </Panel>
 
       {/* ── REGISTRAR RESPOSTA MANUAL ──────────────────────────────── */}
@@ -2558,6 +2572,54 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
 }
 
 // ─── TAB CONFIG ──────────────────────────────────────────────────────────────
+// ─── BASE MESTRE TABELA ───────────────────────────────────────────────────────
+function BaseMestreTabela({appState,T}:{appState:AppState;T:Record<string,string>}){
+  const[bmBusca,setBmBusca]=useState("");
+  const bmEntries=Object.entries(appState.baseMestre);
+  const comTel=bmEntries.filter(([,u])=>u.temTel).length;
+  const semTel=bmEntries.length-comTel;
+  const bmFiltrado=bmEntries.filter(([,u])=>
+    !bmBusca||u.nome.toLowerCase().includes(bmBusca.toLowerCase())||
+    (u.telefone||"").includes(bmBusca)||(u.email||"").toLowerCase().includes(bmBusca.toLowerCase())
+  ).slice(0,50);
+  if(bmEntries.length===0)return null;
+  return(
+    <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap" as const,gap:8}}>
+        <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text}}>👥 Base Mestre</div>
+        <div style={{display:"flex",gap:16,fontFamily:T.mono,fontSize:11}}>
+          <span style={{color:T.green}}>✅ {comTel} com telefone</span>
+          {semTel>0&&<span style={{color:T.amber}}>⚠️ {semTel} sem telefone</span>}
+          <span style={{color:T.text3}}>{bmEntries.length} total</span>
+        </div>
+      </div>
+      <input type="text" placeholder="Buscar por nome, telefone ou email..." value={bmBusca} onChange={e=>setBmBusca(e.target.value)}
+        style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 12px",borderRadius:8,fontFamily:T.mono,fontSize:12,marginBottom:12}}/>
+      <div style={{maxHeight:280,overflowY:"auto" as const}}>
+        <table style={{width:"100%",borderCollapse:"collapse" as const,fontSize:12}}>
+          <thead><tr style={{borderBottom:`1px solid ${T.border}`}}>
+            {["Nome","Telefone","Email","Status"].map(h=>(
+              <th key={h} style={{padding:"6px 10px",textAlign:"left" as const,fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.1em",textTransform:"uppercase" as const}}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {bmFiltrado.map(([key,u])=>(
+              <tr key={key} style={{borderBottom:`1px solid rgba(26,35,51,0.5)`}}>
+                <td style={{padding:"8px 10px",color:T.text,fontFamily:T.sans,fontSize:12}}>{u.nome}</td>
+                <td style={{padding:"8px 10px",color:u.temTel?T.green:T.amber,fontFamily:T.mono,fontSize:11}}>{u.telefone||"—"}</td>
+                <td style={{padding:"8px 10px",color:T.text2,fontFamily:T.mono,fontSize:10,maxWidth:180,overflow:"hidden" as const,textOverflow:"ellipsis" as const,whiteSpace:"nowrap" as const}}>{u.email||"—"}</td>
+                <td style={{padding:"8px 10px"}}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 8px",borderRadius:4,background:u.temTel?"rgba(0,230,118,0.1)":"rgba(255,171,0,0.1)",color:u.temTel?T.green:T.amber}}>{u.temTel?"✅ ok":"⚠️ sem tel"}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {bmEntries.length>50&&!bmBusca&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,padding:"8px 0"}}>Mostrando 50 de {bmEntries.length}. Use a busca.</div>}
+      </div>
+    </div>
+  );
+}
+
+
 function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const[activeSection,setActiveSection]=useState<"contatos"|"mensagens"|"dre"|"cupons"|"estacoes"|"zapi">("contatos");
@@ -2681,57 +2743,7 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
             </button>
           </div>
           <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#93c5fd",marginBottom:16}}>ℹ️ Importe também o CSV de contatos por estação. Estação detectada automaticamente.</div>
-          {(()=>{
-            const bmEntries=Object.entries(appState.baseMestre);
-            const comTel=bmEntries.filter(([,u])=>u.temTel).length;
-            const semTel=bmEntries.length-comTel;
-            const[bmBusca,setBmBusca]=React.useState("");
-            const bmFiltrado=bmEntries.filter(([,u])=>
-              !bmBusca||u.nome.toLowerCase().includes(bmBusca.toLowerCase())||
-              (u.telefone||"").includes(bmBusca)||(u.email||"").toLowerCase().includes(bmBusca.toLowerCase())
-            ).slice(0,50);
-            if(bmEntries.length===0) return null;
-            return(
-              <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap" as const,gap:8}}>
-                  <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text}}>👥 Base Mestre</div>
-                  <div style={{display:"flex",gap:16,fontFamily:T.mono,fontSize:11}}>
-                    <span style={{color:T.green}}>✅ {comTel} com telefone</span>
-                    {semTel>0&&<span style={{color:T.amber}}>⚠️ {semTel} sem telefone</span>}
-                    <span style={{color:T.text3}}>{bmEntries.length} total</span>
-                  </div>
-                </div>
-                <input
-                  type="text" placeholder="Buscar por nome, telefone ou email..."
-                  value={bmBusca} onChange={e=>setBmBusca(e.target.value)}
-                  style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,
-                    padding:"8px 12px",borderRadius:8,fontFamily:T.mono,fontSize:12,marginBottom:12}}
-                />
-                <div style={{maxHeight:280,overflowY:"auto" as const}}>
-                  <table style={{width:"100%",borderCollapse:"collapse" as const,fontSize:12}}>
-                    <thead>
-                      <tr style={{borderBottom:`1px solid ${T.border}`}}>
-                        {["Nome","Telefone","Email","Status"].map(h=>(
-                          <th key={h} style={{padding:"6px 10px",textAlign:"left" as const,fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.1em",textTransform:"uppercase" as const}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bmFiltrado.map(([key,u])=>(
-                        <tr key={key} style={{borderBottom:`1px solid rgba(26,35,51,0.5)`}}>
-                          <td style={{padding:"8px 10px",color:T.text,fontFamily:T.sans,fontSize:12}}>{u.nome}</td>
-                          <td style={{padding:"8px 10px",color:u.temTel?T.green:T.amber,fontFamily:T.mono,fontSize:11}}>{u.telefone||"—"}</td>
-                          <td style={{padding:"8px 10px",color:T.text2,fontFamily:T.mono,fontSize:10,maxWidth:180,overflow:"hidden" as const,textOverflow:"ellipsis" as const,whiteSpace:"nowrap" as const}}>{u.email||"—"}</td>
-                          <td style={{padding:"8px 10px"}}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 8px",borderRadius:4,background:u.temTel?"rgba(0,230,118,0.1)":"rgba(255,171,0,0.1)",color:u.temTel?T.green:T.amber}}>{u.temTel?"✅ ok":"⚠️ sem tel"}</span></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {bmEntries.length>50&&!bmBusca&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,padding:"8px 0"}}>Mostrando 50 de {bmEntries.length}. Use a busca para filtrar.</div>}
-                </div>
-              </div>
-            );
-          })()}
+          <BaseMestreTabela appState={appState} T={T}/>
           <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16,textAlign:"center"}}>
             <div style={{fontSize:28,marginBottom:10}}>📂</div>
             <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text,marginBottom:5}}>Importar CSV de Contatos por Estação</div>
