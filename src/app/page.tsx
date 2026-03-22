@@ -1618,16 +1618,32 @@ function FilaDoDia({sessions,appState,localDisparos,getMsgTemplate,abrirPreview,
 
   const iniciarDisparo=async()=>{
     if(fila.length===0){return;}
-    const horarios=calcHorarios(fila.length);
-    if(!window.confirm(`Disparar para ${fila.length} usuários?
+    // Verificar limite diário
+    const dispHoje=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
+    const manHoje=appState.disparosManuaisHoje||0;
+    const limDia=appState.limiteDisparoDiario||30;
+    const slotsLiv=Math.max(0,limDia-dispHoje-manHoje);
+    if(slotsLiv<=0){alert(`Limite diário de ${limDia} disparos atingido.`);return;}
+    // Verificar horário
+    const hIni=appState.metas["crm_inicio"]||9;
+    const hFm=appState.metas["crm_fim"]||18;
+    const horaAgora=new Date().getHours();
+    if(horaAgora<hIni||horaAgora>=hFm){alert(`Disparos configurados entre ${hIni}h e ${hFm}h.`);return;}
+    const filaLimitada=fila.slice(0,slotsLiv);
+    const horarios=calcHorarios(filaLimitada.length);
+    if(!window.confirm(`Disparar para ${filaLimitada.length} usuários?
 Primeira mensagem: agora
 Última: ~${horarios[horarios.length-1]?.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
-Intervalo: ${intervaloMin}–${intervaloMax} min entre cada`))return;
-    setAutoStatus("running");setAutoIdx(0);setAutoTotal(fila.length);setAutoLog([]);pausedRef.current=false;
+Intervalo: ${intervaloMin}–${intervaloMax} min entre cada
+Limite restante: ${slotsLiv}/${limDia}`))return;
+    setAutoStatus("running");setAutoIdx(0);setAutoTotal(filaLimitada.length);setAutoLog([]);pausedRef.current=false;
     const disparar=async(i:number)=>{
-      if(i>=fila.length){setAutoStatus("done");return;}
+      if(i>=filaLimitada.length){setAutoStatus("done");return;}
       if(pausedRef.current){setAutoStatus("paused");return;}
-      const u=fila[i];setAutoIdx(i);
+      // Verificar horário a cada disparo
+      const horaCurr=new Date().getHours();
+      if(horaCurr>=hFm){setAutoStatus("done");setAutoLog(prev=>[{nome:"⏰ Horário encerrado",status:"ok" as const,ts:new Date()},...prev]);return;}
+      const u=filaLimitada[i];setAutoIdx(i);
       const template=getMsgPorEstacao(u.msgId,u.hubKey);
       const cupomFila=u.msgId==="msg2a"?(u.hubKey==="cidadeauto"?getMsgTemplate("cupom_cidadeauto"):u.hubKey==="costa"?getMsgTemplate("cupom_costa"):getMsgTemplate("cupom_parkway")):"";
       await enviarUm(u.nome,u.hubKey,u.msgId,template,cupomFila);
@@ -1635,7 +1651,7 @@ Intervalo: ${intervaloMin}–${intervaloMax} min entre cada`))return;
       const delay=Math.floor(Math.random()*(intervaloMax-intervaloMin+1)+intervaloMin)*60000;
       const proximo=new Date(Date.now()+delay);
       setProximoHorario(proximo);
-      if(i<fila.length-1){autoRef.current=setTimeout(()=>disparar(i+1),delay);}
+      if(i<filaLimitada.length-1){autoRef.current=setTimeout(()=>disparar(i+1),delay);}
       else{setAutoStatus("done");}
     };
     disparar(0);
@@ -1887,7 +1903,13 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
             const tplKey=isMot?(hubDisp==="cidadeauto"?"msg2a_cidadeauto":"msg2a_parkway"):(hubDisp==="costa"?"msg2b_costa":hubDisp==="cidadeauto"?"msg2b_cidadeauto":"msg2b_parkway");
             const tpl=(appState.mensagens[tplKey as keyof typeof appState.mensagens]??"") as string;
             if(!tpl)continue;
-            await new Promise(res=>setTimeout(res,3000));
+            // Segurança anti-bloqueio: delay mínimo de 3min entre disparos automáticos
+            const dMinAuto=appState.metas["crm_intervalo_min"]||3;
+            const dMaxAuto=appState.metas["crm_intervalo_max"]||8;
+            const delayAutoMs=Math.floor(Math.random()*(dMaxAuto-dMinAuto+1)+dMinAuto)*60000;
+            await new Promise(res=>setTimeout(res,delayAutoMs));
+            // Verificar limite antes de disparar automaticamente
+            const dispHojeAuto=data.filter((d:WebhookResposta)=>d.processado).length;
             enviarUm(nomeDisp,hubDisp,msgIdDisp,tpl);
           }
         }
@@ -1945,13 +1967,38 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
   const enviarLote=async(section:string,lista:UserData[],msgId:string,template:string,cupom:string="")=>{
     const sel=getSel(section);const elegíveis=lista.filter(u=>sel.has(u.user)&&getTel(u.user));
     if(!elegíveis.length){alert("Nenhum selecionado com telefone.");return;}
+    // Verificar limite diário antes de disparar
+    const disparadosHoje2=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
+    const manuaisHoje2=appState.disparosManuaisHoje||0;
+    const limiteDisp=appState.limiteDisparoDiario||30;
+    const slotsRestantes=Math.max(0,limiteDisp-disparadosHoje2-manuaisHoje2);
+    if(slotsRestantes<=0){alert(`Limite diário de ${limiteDisp} disparos atingido. Tente amanhã.`);return;}
+    // Verificar horário configurado
+    const hInicio=appState.metas["crm_inicio"]||9;
+    const hFim=appState.metas["crm_fim"]||18;
+    const agora=new Date().getHours();
+    if(agora<hInicio||agora>=hFim){alert(`Disparos configurados apenas entre ${hInicio}h e ${hFim}h. Acesse Config → Z-API para ajustar.`);return;}
+    const elegiveisLimitados=elegíveis.slice(0,slotsRestantes);
+    if(elegiveisLimitados.length<elegíveis.length){alert(`Você tem ${slotsRestantes} slots restantes hoje. Serão enviados ${elegiveisLimitados.length} de ${elegíveis.length} selecionados.`);}
     // Modal inline — não usa confirm() nativo
     await new Promise<void>((resolve,reject)=>{
-      setConfirmModal({msg:`Disparar para ${elegíveis.length} usuário${elegíveis.length>1?"s":""}?`,qtd:elegíveis.length,onConfirm:()=>{setConfirmModal(null);resolve();}});
+      setConfirmModal({msg:`Disparar para ${elegiveisLimitados.length} usuário${elegiveisLimitados.length>1?"s":""}?
+Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_intervalo_max"]||45} min entre cada`,qtd:elegiveisLimitados.length,onConfirm:()=>{setConfirmModal(null);resolve();}});
       setTimeout(()=>{setConfirmModal(null);reject(new Error("timeout"));},30000);
     }).catch(()=>{return;});
     setEnviandoLote(p=>({...p,[section]:true}));
-    for(let i=0;i<elegíveis.length;i++){await enviarUm(elegíveis[i].user,elegíveis[i].localFreqKey,msgId,template,cupom);if(i<elegíveis.length-1)await new Promise(r=>setTimeout(r,3000));}
+    for(let i=0;i<elegiveisLimitados.length;i++){
+      await enviarUm(elegiveisLimitados[i].user,elegiveisLimitados[i].localFreqKey,msgId,template,cupom);
+      if(i<elegiveisLimitados.length-1){
+        const dMin=appState.metas["crm_intervalo_min"]||15;
+        const dMax=appState.metas["crm_intervalo_max"]||45;
+        const delayMs=Math.floor(Math.random()*(dMax-dMin+1)+dMin)*60000;
+        await new Promise(r=>setTimeout(r,delayMs));
+        // Verificar horário a cada iteração
+        const horaAtual=new Date().getHours();
+        if(horaAtual>=hFim){setEnviandoLote(p=>({...p,[section]:false}));alert(`Horário de disparo encerrado (${hFim}h). ${i+1} de ${elegiveisLimitados.length} enviados.`);return;}
+      }
+    }
     setSelecionados(p=>({...p,[section]:[]}));setEnviandoLote(p=>({...p,[section]:false}));
   };
   const leads1=users.filter(u=>!u.isParceiro&&isCrmAtiva(u.localFreqKey)&&!jaContatado(u.user,"msg1"));
