@@ -2544,6 +2544,57 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
             </button>
           </div>
           <div style={{background:"rgba(59,130,246,0.06)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#93c5fd",marginBottom:16}}>ℹ️ Importe também o CSV de contatos por estação. Estação detectada automaticamente.</div>
+          {(()=>{
+            const bmEntries=Object.entries(appState.baseMestre);
+            const comTel=bmEntries.filter(([,u])=>u.temTel).length;
+            const semTel=bmEntries.length-comTel;
+            const[bmBusca,setBmBusca]=React.useState("");
+            const bmFiltrado=bmEntries.filter(([,u])=>
+              !bmBusca||u.nome.toLowerCase().includes(bmBusca.toLowerCase())||
+              (u.telefone||"").includes(bmBusca)||(u.email||"").toLowerCase().includes(bmBusca.toLowerCase())
+            ).slice(0,50);
+            if(bmEntries.length===0) return null;
+            return(
+              <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap" as const,gap:8}}>
+                  <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text}}>👥 Base Mestre</div>
+                  <div style={{display:"flex",gap:16,fontFamily:T.mono,fontSize:11}}>
+                    <span style={{color:T.green}}>✅ {comTel} com telefone</span>
+                    {semTel>0&&<span style={{color:T.amber}}>⚠️ {semTel} sem telefone</span>}
+                    <span style={{color:T.text3}}>{bmEntries.length} total</span>
+                  </div>
+                </div>
+                <input
+                  type="text" placeholder="Buscar por nome, telefone ou email..."
+                  value={bmBusca} onChange={e=>setBmBusca(e.target.value)}
+                  style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,
+                    padding:"8px 12px",borderRadius:8,fontFamily:T.mono,fontSize:12,marginBottom:12}}
+                />
+                <div style={{maxHeight:280,overflowY:"auto" as const}}>
+                  <table style={{width:"100%",borderCollapse:"collapse" as const,fontSize:12}}>
+                    <thead>
+                      <tr style={{borderBottom:`1px solid ${T.border}`}}>
+                        {["Nome","Telefone","Email","Status"].map(h=>(
+                          <th key={h} style={{padding:"6px 10px",textAlign:"left" as const,fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.1em",textTransform:"uppercase" as const}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bmFiltrado.map(([key,u])=>(
+                        <tr key={key} style={{borderBottom:`1px solid rgba(26,35,51,0.5)`}}>
+                          <td style={{padding:"8px 10px",color:T.text,fontFamily:T.sans,fontSize:12}}>{u.nome}</td>
+                          <td style={{padding:"8px 10px",color:u.temTel?T.green:T.amber,fontFamily:T.mono,fontSize:11}}>{u.telefone||"—"}</td>
+                          <td style={{padding:"8px 10px",color:T.text2,fontFamily:T.mono,fontSize:10,maxWidth:180,overflow:"hidden" as const,textOverflow:"ellipsis" as const,whiteSpace:"nowrap" as const}}>{u.email||"—"}</td>
+                          <td style={{padding:"8px 10px"}}><span style={{fontFamily:T.mono,fontSize:9,padding:"2px 8px",borderRadius:4,background:u.temTel?"rgba(0,230,118,0.1)":"rgba(255,171,0,0.1)",color:u.temTel?T.green:T.amber}}>{u.temTel?"✅ ok":"⚠️ sem tel"}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {bmEntries.length>50&&!bmBusca&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,padding:"8px 0"}}>Mostrando 50 de {bmEntries.length}. Use a busca para filtrar.</div>}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:14,padding:"20px",marginBottom:16,textAlign:"center"}}>
             <div style={{fontSize:28,marginBottom:10}}>📂</div>
             <div style={{fontFamily:T.sans,fontSize:14,fontWeight:600,color:T.text,marginBottom:5}}>Importar CSV de Contatos por Estação</div>
@@ -3334,104 +3385,90 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
 
   return(
     <div style={{padding:pad}}>
-      <SectionLabel>Base Ativa — {mesNome}</SectionLabel>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:24}}>
-        <KpiCard label="MAU" value={`${mauAtual}`} sub={`${mauDelta>=0?"+":""}${mauDelta} vs mês ant.`} accent={mauDelta>=0?T.green:T.red}/>
-        <KpiCard label="Novos" value={`${novosEsteMes}`} sub="1ª recarga este mês" accent={T.teal}/>
-        <KpiCard label="Churn" value={`${churnedEsteMes}`} sub={`${taxaChurn.toFixed(1)}% da base`} accent={churnedEsteMes>0?T.amber:T.green}/>
-        <KpiCard label="Retenção" value={`${taxaRetencao.toFixed(0)}%`} sub="vs mês anterior" accent={taxaRetencao>=80?T.green:taxaRetencao>=60?T.amber:T.red}/>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:24}}>
-        <Panel>
-          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:16}}>📈 Crescimento da Base</div>
-          <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:10}}>
-            <div style={{flex:novosEsteMes||1,height:28,background:`${T.green}25`,borderRadius:"6px 0 0 6px",display:"flex",alignItems:"center",justifyContent:"center",minWidth:40}}>
-              <span style={{fontFamily:T.mono,fontSize:11,color:T.green,fontWeight:700}}>+{novosEsteMes}</span>
+            {(()=>{
+        if(ok.length<10) return null;
+        const allTs2=ok.map(s=>s.date.getTime());
+        const minTs=Math.min(...allTs2),maxTs2=Math.max(...allTs2);
+        const span=maxTs2-minTs;
+        if(span<7*86400000) return null;
+        const mid=minTs+span/2;
+        const rev1:Record<string,number>={};
+        const rev2:Record<string,number>={};
+        ok.forEach(s=>{
+          if(s.date.getTime()<=mid) rev1[s.user]=(rev1[s.user]||0)+s.value;
+          else rev2[s.user]=(rev2[s.user]||0)+s.value;
+        });
+        const candidatos=Object.keys(rev1).filter(u=>(rev1[u]||0)>=200);
+        const deteriorados=candidatos.map(u=>{
+          const r1=rev1[u]||0,r2=rev2[u]||0;
+          const pct=r1>0?((r2-r1)/r1*100):0;
+          const seg=motoristas.find(m=>m.user===u)?"Motorista":heavys.find(h=>h.user===u)?"Heavy":"Regular";
+          const diasSemRecarga=Math.round((maxTs2-(userStats[u]?.lastTs||maxTs2))/86400000);
+          return{user:u,r1,r2,pct,seg,diasSemRecarga};
+        }).filter(u=>u.pct<=-20).sort((a,b)=>a.pct-b.pct);
+        if(deteriorados.length===0) return(
+          <Panel style={{marginBottom:24}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"4px 0"}}>
+              <span style={{fontSize:18}}>🐋</span>
+              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Radar Whale — Todos Estáveis</div>
             </div>
-            <div style={{flex:churnedEsteMes||1,height:28,background:`${T.red}25`,borderRadius:"0 6px 6px 0",display:"flex",alignItems:"center",justifyContent:"center",minWidth:40}}>
-              <span style={{fontFamily:T.mono,fontSize:11,color:T.red,fontWeight:700}}>-{churnedEsteMes}</span>
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:14}}>
-            <span style={{color:T.green}}>✅ Novos</span>
-            <span style={{color:T.red}}>❌ Não voltaram</span>
-          </div>
-          <div style={{background:T.bg3,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between"}}>
-            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Saldo · <span style={{color:mauDelta>=0?T.green:T.red,fontWeight:700}}>{mauDelta>=0?"+":""}{mauDelta}</span></div>
-            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Histórico · <span style={{color:T.text,fontWeight:700}}>{todosUsers.length}</span></div>
-          </div>
-        </Panel>
-        <Panel>
-          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>🏪 MAU por Estação</div>
-          {mauHub.map(h=>(
-            <div key={h.hub} style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>{trunc(hubNome(h.hub),16)}</span>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontFamily:T.mono,fontSize:11,color:T.text,fontWeight:700}}>{h.mau}</span>
-                  {h.delta!==0&&<span style={{fontFamily:T.mono,fontSize:9,color:h.delta>0?T.green:T.red}}>{h.delta>0?"+":""}{h.delta}</span>}
+          </Panel>
+        );
+        const criticos=deteriorados.filter(u=>u.pct<=-40);
+        const receitaEmRisco=deteriorados.reduce((a,u)=>a+(u.r1-u.r2),0);
+        return(
+          <>
+            <SectionLabel>🐋 Radar Whale — Deterioração entre Períodos</SectionLabel>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
+              {[
+                {label:"Críticos",val:`${criticos.length}`,sub:"queda ≥40%",cor:T.red},
+                {label:"Atenção",val:`${deteriorados.length-criticos.length}`,sub:"queda 20–40%",cor:T.amber},
+                {label:"Receita em Risco",val:brl(receitaEmRisco),sub:"delta P1→P2",cor:T.red},
+                {label:"Monitorados",val:`${candidatos.length}`,sub:"≥R$200 no P1",cor:T.text2},
+              ].map((k,i)=>(
+                <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px",position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:4}}>{k.label}</div>
+                  <div style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:k.cor,marginBottom:2}}>{k.val}</div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{k.sub}</div>
                 </div>
-              </div>
-              <div style={{height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${mauHub[0].mau>0?(h.mau/mauHub[0].mau*100):0}%`,background:T.green,borderRadius:2}}/>
-              </div>
+              ))}
             </div>
-          ))}
-        </Panel>
-      </div>
+            <Panel style={{marginBottom:24}}>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:10}}>Comparando metade inicial vs metade recente do período carregado</div>
+              <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
+                {deteriorados.slice(0,8).map(u=>{
+                  const isCrit=u.pct<=-40;
+                  const cor=isCrit?T.red:T.amber;
+                  return(
+                    <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:T.bg3,borderRadius:10,border:`1px solid ${cor}20`,gap:8,flexWrap:"wrap" as const}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
+                        <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}15`,color:cor,flexShrink:0}}>{isCrit?"🔴 Crítico":"🟡 Atenção"}</span>
+                        <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{trunc(u.user,isMobile?14:26)}</span>
+                        <span style={{fontFamily:T.mono,fontSize:9,color:T.text3,flexShrink:0}}>{u.seg}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:14,flexShrink:0}}>
+                        <div style={{textAlign:"right" as const}}>
+                          <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{brl(u.r1)} → {brl(u.r2)}</div>
+                          <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.diasSemRecarga>0?`${u.diasSemRecarga}d sem recarregar`:""}</div>
+                        </div>
+                        <div style={{fontFamily:T.sans,fontSize:14,fontWeight:800,color:cor,minWidth:50,textAlign:"right" as const}}>{u.pct.toFixed(0)}%</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {deteriorados.length>8&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,marginTop:8}}>+{deteriorados.length-8} outros</div>}
+              <div style={{marginTop:12,padding:"10px 12px",background:`${T.amber}08`,border:`1px solid ${T.amber}20`,borderRadius:8}}>
+                <div style={{fontFamily:T.mono,fontSize:10,color:T.amber,marginBottom:2}}>⚡ Próximo passo</div>
+                <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Vá para <strong style={{color:T.text}}>Ações → Fila do Dia</strong> para disparar MSG Risco para os críticos.</div>
+              </div>
+            </Panel>
+          </>
+        );
+      })()}
 
-      <SectionLabel>LTV — Valor por Usuário</SectionLabel>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:24}}>
-        {[{seg:"Motorista",cor:T.red,qtd:motoristas.length,ltv:ltvM},{seg:"Heavy",cor:T.amber,qtd:heavys.length,ltv:ltvH},{seg:"Shopper",cor:T.green,qtd:shoppers.length,ltv:ltvS}].map(s=>(
-          <div key={s.seg} style={{background:T.bg2,border:`1px solid ${s.cor}30`,borderRadius:14,padding:"16px",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:s.cor}}/>
-            <div style={{fontFamily:T.mono,fontSize:9,color:s.cor,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:4}}>{s.seg} · {s.qtd}</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-              <div style={{background:T.bg3,borderRadius:8,padding:"8px 10px"}}>
-                <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:3}}>LTV Real</div>
-                <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:s.cor}}>{brl(s.ltv.real)}</div>
-                <div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>gasto médio</div>
-              </div>
-              <div style={{background:T.bg3,borderRadius:8,padding:"8px 10px"}}>
-                <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:3}}>Proj. 12m</div>
-                <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:T.text}}>{brl(s.ltv.proj)}</div>
-                <div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>potencial anual</div>
-              </div>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2}}>
-              <span>Ticket <strong style={{color:T.text}}>{brl(s.ltv.ticket)}</strong></span>
-              <span>Freq <strong style={{color:T.text}}>{s.ltv.freqMes.toFixed(1)}x/mês</strong></span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <SectionLabel>Receita por Segmento — {mesNome}</SectionLabel>
-      <Panel style={{marginBottom:24}}>
-        {[{seg:"Motoristas",rev:revMot,cor:T.red,qtd:motoristas.length},{seg:"Heavy Users",rev:revHvy,cor:T.amber,qtd:heavys.length},{seg:"Shoppers",rev:revShp,cor:T.green,qtd:shoppers.length}].map(s=>(
-          <div key={s.seg} style={{marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:8,height:8,borderRadius:2,background:s.cor}}/>
-                <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text}}>{s.seg}</span>
-                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>({s.qtd})</span>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{(s.rev/revTot*100).toFixed(0)}%</span>
-                <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:s.cor}}>{brl(s.rev)}</span>
-              </div>
-            </div>
-            <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
-              <div style={{height:"100%",width:`${(s.rev/revTot*100)}%`,background:s.cor,borderRadius:3}}/>
-            </div>
-          </div>
-        ))}
-        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:11,color:T.text2}}>
-          <span>Total {mesNome}</span><span style={{color:T.green,fontWeight:700}}>{brl(revTot)}</span>
-        </div>
-      </Panel>
-
+      {/* ── 1. RESULTADOS DAS CAMPANHAS ──────────────────────────────────── */}
       <SectionLabel>⚠️ Receita em Risco — Churn</SectionLabel>
       {(()=>{
         // Calcular receita em risco por segmento
@@ -3525,90 +3562,104 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
       })()}
 
       {/* ── RADAR WHALE ── */}
-      {(()=>{
-        if(ok.length<10) return null;
-        const allTs2=ok.map(s=>s.date.getTime());
-        const minTs=Math.min(...allTs2),maxTs2=Math.max(...allTs2);
-        const span=maxTs2-minTs;
-        if(span<7*86400000) return null;
-        const mid=minTs+span/2;
-        const rev1:Record<string,number>={};
-        const rev2:Record<string,number>={};
-        ok.forEach(s=>{
-          if(s.date.getTime()<=mid) rev1[s.user]=(rev1[s.user]||0)+s.value;
-          else rev2[s.user]=(rev2[s.user]||0)+s.value;
-        });
-        const candidatos=Object.keys(rev1).filter(u=>(rev1[u]||0)>=200);
-        const deteriorados=candidatos.map(u=>{
-          const r1=rev1[u]||0,r2=rev2[u]||0;
-          const pct=r1>0?((r2-r1)/r1*100):0;
-          const seg=motoristas.find(m=>m.user===u)?"Motorista":heavys.find(h=>h.user===u)?"Heavy":"Regular";
-          const diasSemRecarga=Math.round((maxTs2-(userStats[u]?.lastTs||maxTs2))/86400000);
-          return{user:u,r1,r2,pct,seg,diasSemRecarga};
-        }).filter(u=>u.pct<=-20).sort((a,b)=>a.pct-b.pct);
-        if(deteriorados.length===0) return(
-          <Panel style={{marginBottom:24}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"4px 0"}}>
-              <span style={{fontSize:18}}>🐋</span>
-              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Radar Whale — Todos Estáveis</div>
-            </div>
-          </Panel>
-        );
-        const criticos=deteriorados.filter(u=>u.pct<=-40);
-        const receitaEmRisco=deteriorados.reduce((a,u)=>a+(u.r1-u.r2),0);
-        return(
-          <>
-            <SectionLabel>🐋 Radar Whale — Deterioração entre Períodos</SectionLabel>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
-              {[
-                {label:"Críticos",val:`${criticos.length}`,sub:"queda ≥40%",cor:T.red},
-                {label:"Atenção",val:`${deteriorados.length-criticos.length}`,sub:"queda 20–40%",cor:T.amber},
-                {label:"Receita em Risco",val:brl(receitaEmRisco),sub:"delta P1→P2",cor:T.red},
-                {label:"Monitorados",val:`${candidatos.length}`,sub:"≥R$200 no P1",cor:T.text2},
-              ].map((k,i)=>(
-                <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px",position:"relative",overflow:"hidden"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:4}}>{k.label}</div>
-                  <div style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:k.cor,marginBottom:2}}>{k.val}</div>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{k.sub}</div>
-                </div>
-              ))}
-            </div>
-            <Panel style={{marginBottom:24}}>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:10}}>Comparando metade inicial vs metade recente do período carregado</div>
-              <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
-                {deteriorados.slice(0,8).map(u=>{
-                  const isCrit=u.pct<=-40;
-                  const cor=isCrit?T.red:T.amber;
-                  return(
-                    <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:T.bg3,borderRadius:10,border:`1px solid ${cor}20`,gap:8,flexWrap:"wrap" as const}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
-                        <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}15`,color:cor,flexShrink:0}}>{isCrit?"🔴 Crítico":"🟡 Atenção"}</span>
-                        <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{trunc(u.user,isMobile?14:26)}</span>
-                        <span style={{fontFamily:T.mono,fontSize:9,color:T.text3,flexShrink:0}}>{u.seg}</span>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:14,flexShrink:0}}>
-                        <div style={{textAlign:"right" as const}}>
-                          <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{brl(u.r1)} → {brl(u.r2)}</div>
-                          <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.diasSemRecarga>0?`${u.diasSemRecarga}d sem recarregar`:""}</div>
-                        </div>
-                        <div style={{fontFamily:T.sans,fontSize:14,fontWeight:800,color:cor,minWidth:50,textAlign:"right" as const}}>{u.pct.toFixed(0)}%</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {deteriorados.length>8&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,marginTop:8}}>+{deteriorados.length-8} outros</div>}
-              <div style={{marginTop:12,padding:"10px 12px",background:`${T.amber}08`,border:`1px solid ${T.amber}20`,borderRadius:8}}>
-                <div style={{fontFamily:T.mono,fontSize:10,color:T.amber,marginBottom:2}}>⚡ Próximo passo</div>
-                <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Vá para <strong style={{color:T.text}}>Ações → Fila do Dia</strong> para disparar MSG Risco para os críticos.</div>
-              </div>
-            </Panel>
-          </>
-        );
-      })()}
+<SectionLabel>Base Ativa — {mesNome}</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:24}}>
+        <KpiCard label="MAU" value={`${mauAtual}`} sub={`${mauDelta>=0?"+":""}${mauDelta} vs mês ant.`} accent={mauDelta>=0?T.green:T.red}/>
+        <KpiCard label="Novos" value={`${novosEsteMes}`} sub="1ª recarga este mês" accent={T.teal}/>
+        <KpiCard label="Churn" value={`${churnedEsteMes}`} sub={`${taxaChurn.toFixed(1)}% da base`} accent={churnedEsteMes>0?T.amber:T.green}/>
+        <KpiCard label="Retenção" value={`${taxaRetencao.toFixed(0)}%`} sub="vs mês anterior" accent={taxaRetencao>=80?T.green:taxaRetencao>=60?T.amber:T.red}/>
+      </div>
 
-      {/* ── 1. RESULTADOS DAS CAMPANHAS ──────────────────────────────────── */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14,marginBottom:24}}>
+        <Panel>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:16}}>📈 Crescimento da Base</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:10}}>
+            <div style={{flex:novosEsteMes||1,height:28,background:`${T.green}25`,borderRadius:"6px 0 0 6px",display:"flex",alignItems:"center",justifyContent:"center",minWidth:40}}>
+              <span style={{fontFamily:T.mono,fontSize:11,color:T.green,fontWeight:700}}>+{novosEsteMes}</span>
+            </div>
+            <div style={{flex:churnedEsteMes||1,height:28,background:`${T.red}25`,borderRadius:"0 6px 6px 0",display:"flex",alignItems:"center",justifyContent:"center",minWidth:40}}>
+              <span style={{fontFamily:T.mono,fontSize:11,color:T.red,fontWeight:700}}>-{churnedEsteMes}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:14}}>
+            <span style={{color:T.green}}>✅ Novos</span>
+            <span style={{color:T.red}}>❌ Não voltaram</span>
+          </div>
+          <div style={{background:T.bg3,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between"}}>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Saldo · <span style={{color:mauDelta>=0?T.green:T.red,fontWeight:700}}>{mauDelta>=0?"+":""}{mauDelta}</span></div>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>Histórico · <span style={{color:T.text,fontWeight:700}}>{todosUsers.length}</span></div>
+          </div>
+        </Panel>
+        <Panel>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:14}}>🏪 MAU por Estação</div>
+          {mauHub.map(h=>(
+            <div key={h.hub} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>{trunc(hubNome(h.hub),16)}</span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontFamily:T.mono,fontSize:11,color:T.text,fontWeight:700}}>{h.mau}</span>
+                  {h.delta!==0&&<span style={{fontFamily:T.mono,fontSize:9,color:h.delta>0?T.green:T.red}}>{h.delta>0?"+":""}{h.delta}</span>}
+                </div>
+              </div>
+              <div style={{height:4,background:T.bg3,borderRadius:2,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${mauHub[0].mau>0?(h.mau/mauHub[0].mau*100):0}%`,background:T.green,borderRadius:2}}/>
+              </div>
+            </div>
+          ))}
+        </Panel>
+      </div>
+
+      <SectionLabel>Receita por Segmento — {mesNome}</SectionLabel>
+      <Panel style={{marginBottom:24}}>
+        {[{seg:"Motoristas",rev:revMot,cor:T.red,qtd:motoristas.length},{seg:"Heavy Users",rev:revHvy,cor:T.amber,qtd:heavys.length},{seg:"Shoppers",rev:revShp,cor:T.green,qtd:shoppers.length}].map(s=>(
+          <div key={s.seg} style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:8,height:8,borderRadius:2,background:s.cor}}/>
+                <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text}}>{s.seg}</span>
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>({s.qtd})</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{(s.rev/revTot*100).toFixed(0)}%</span>
+                <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:s.cor}}>{brl(s.rev)}</span>
+              </div>
+            </div>
+            <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${(s.rev/revTot*100)}%`,background:s.cor,borderRadius:3}}/>
+            </div>
+          </div>
+        ))}
+        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:11,color:T.text2}}>
+          <span>Total {mesNome}</span><span style={{color:T.green,fontWeight:700}}>{brl(revTot)}</span>
+        </div>
+      </Panel>
+
+      <SectionLabel>LTV — Valor por Usuário</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:24}}>
+        {[{seg:"Motorista",cor:T.red,qtd:motoristas.length,ltv:ltvM},{seg:"Heavy",cor:T.amber,qtd:heavys.length,ltv:ltvH},{seg:"Shopper",cor:T.green,qtd:shoppers.length,ltv:ltvS}].map(s=>(
+          <div key={s.seg} style={{background:T.bg2,border:`1px solid ${s.cor}30`,borderRadius:14,padding:"16px",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:s.cor}}/>
+            <div style={{fontFamily:T.mono,fontSize:9,color:s.cor,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:4}}>{s.seg} · {s.qtd}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <div style={{background:T.bg3,borderRadius:8,padding:"8px 10px"}}>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:3}}>LTV Real</div>
+                <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:s.cor}}>{brl(s.ltv.real)}</div>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>gasto médio</div>
+              </div>
+              <div style={{background:T.bg3,borderRadius:8,padding:"8px 10px"}}>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:3}}>Proj. 12m</div>
+                <div style={{fontFamily:T.sans,fontSize:16,fontWeight:800,color:T.text}}>{brl(s.ltv.proj)}</div>
+                <div style={{fontFamily:T.mono,fontSize:8,color:T.text3}}>potencial anual</div>
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontFamily:T.mono,fontSize:10,color:T.text2}}>
+              <span>Ticket <strong style={{color:T.text}}>{brl(s.ltv.ticket)}</strong></span>
+              <span>Freq <strong style={{color:T.text}}>{s.ltv.freqMes.toFixed(1)}x/mês</strong></span>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <SectionLabel>📊 Resultados das Campanhas</SectionLabel>
       {(()=>{
         const disparos=appState.disparos||[];
