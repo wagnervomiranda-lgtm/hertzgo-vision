@@ -1900,7 +1900,7 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
             const templateKey=isMotoristaResp
               ?(hubK==="cidadeauto"?"msg2a_cidadeauto":"msg2a_parkway")
               :(hubK==="costa"?"msg2b_costa":hubK==="cidadeauto"?"msg2b_cidadeauto":"msg2b_parkway");
-            const template=getMsgTemplate(templateKey);
+            const template=(msgEdits[templateKey]??appState.mensagens[templateKey as keyof Mensagens]??"") as string;
             if(!template)continue;
             // Delay de 3s entre disparos para não acionar bloqueio
             await new Promise(res=>setTimeout(res,3000));
