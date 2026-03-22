@@ -194,6 +194,118 @@ const MSG_DEFAULT: Mensagens = {
 };
 
 // ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
+// ─── SUPABASE HELPERS ────────────────────────────────────────────────────────
+const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+async function sbFetch(path: string, opts: RequestInit = {}) {
+  if (!SB_URL || !SB_KEY) return null;
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
+      ...opts,
+      headers: {
+        apikey: SB_KEY,
+        Authorization: `Bearer ${SB_KEY}`,
+        "Content-Type": "application/json",
+        ...(opts.headers || {}),
+      },
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  } catch { return null; }
+}
+
+async function sbSaveSessoes(sessions: Session[]): Promise<number> {
+  if (!sessions.length || !SB_URL) return 0;
+  const rows = sessions.map(s => ({
+    data_sessao: s.date.toISOString().slice(0, 10),
+    usuario: s.user,
+    hub_key: s.hubKey,
+    hub_nome: s.hub,
+    energy: s.energy,
+    value: s.value,
+    dur_min: s.durMin,
+    start_hour: s.startHour,
+    cancelled: s.cancelled,
+    source: s.source || "spott",
+  }));
+  let saved = 0;
+  for (let i = 0; i < rows.length; i += 200) {
+    const res = await sbFetch("sessoes", {
+      method: "POST",
+      body: JSON.stringify(rows.slice(i, i + 200)),
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    });
+    if (res !== null || true) saved += rows.slice(i, i + 200).length;
+  }
+  return saved;
+}
+
+async function sbLoadSessoes(): Promise<Session[]> {
+  const data = await sbFetch("sessoes?select=*&order=data_sessao.asc&limit=50000");
+  if (!data || !Array.isArray(data)) return [];
+  return data.map((r: Record<string, unknown>, i: number) => {
+    const date = new Date(r.data_sessao as string + "T12:00:00");
+    const hk = (r.hub_key as string) || "parkway";
+    return {
+      id: i,
+      date,
+      hub: (r.hub_nome as string) || hubNome(hk),
+      hubKey: hk,
+      localFreqKey: hk,
+      user: r.usuario as string,
+      charger: "",
+      energy: Number(r.energy),
+      value: Number(r.value),
+      duration: "",
+      durMin: r.dur_min as number | null,
+      overstayMin: null,
+      startHour: r.start_hour as number | null,
+      status: (r.cancelled ? "Cancelado" : "Finalizado") as "Finalizado" | "Cancelado",
+      cancelled: Boolean(r.cancelled),
+      source: (r.source as "spott" | "move") || "spott",
+    };
+  });
+}
+
+async function sbSaveBaseMestre(base: BaseMestre): Promise<void> {
+  if (!SB_URL) return;
+  const rows = Object.entries(base).map(([, u]) => ({
+    nome: u.nome,
+    email: u.email || null,
+    telefone: u.telefone || null,
+    hub_key: u.hubKey || null,
+    atualizado_em: new Date().toISOString(),
+  }));
+  for (let i = 0; i < rows.length; i += 200) {
+    await sbFetch("base_mestre", {
+      method: "POST",
+      body: JSON.stringify(rows.slice(i, i + 200)),
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    });
+  }
+}
+
+async function sbLoadBaseMestre(): Promise<BaseMestre> {
+  const data = await sbFetch("base_mestre?select=*&limit=10000");
+  if (!data || !Array.isArray(data)) return {};
+  const base: BaseMestre = {};
+  data.forEach((r: Record<string, unknown>) => {
+    const nome = (r.nome as string).trim();
+    const key = nome.toLowerCase();
+    base[key] = {
+      nome,
+      email: (r.email as string) || "",
+      telefone: (r.telefone as string) || "",
+      temTel: Boolean(r.telefone),
+      hubKey: (r.hub_key as string) || "",
+    };
+  });
+  return base;
+}
+
+
 const T = {
   bg: "#080a0f", bg1: "#0d1017", bg2: "#121620", bg3: "#181d28",
   border: "rgba(255,255,255,0.07)", border2: "rgba(255,255,255,0.12)",
@@ -3685,6 +3797,8 @@ export default function Home() {
   const isMobile = useIsMobile();
   const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sbLoading, setSbLoading] = useState(true);
+  const [sbStatus, setSbStatus] = useState<"idle"|"ok"|"err">("idle");
   const [demoLoading, setDemoLoading] = useState(DEMO_MODE);
   const [appState, setAppState] = useState<AppState>(loadState);
   const [tab, setTab] = useState<Tab>("dash");
@@ -3696,7 +3810,10 @@ export default function Home() {
       // deep merge dreConfigs e contatos
       if (partial.dreConfigs) next.dreConfigs = { ...prev.dreConfigs, ...partial.dreConfigs };
       if (partial.contatos) next.contatos = { ...prev.contatos, ...partial.contatos };
-      if (partial.baseMestre) next.baseMestre = { ...prev.baseMestre, ...partial.baseMestre };
+      if (partial.baseMestre) {
+        next.baseMestre = { ...prev.baseMestre, ...partial.baseMestre };
+        sbSaveBaseMestre(next.baseMestre).catch(e=>console.error("SB bm:",e));
+      }
       if (partial.userOverrides) next.userOverrides = { ...prev.userOverrides, ...partial.userOverrides };
       if (partial.operadoresIgnorar !== undefined) next.operadoresIgnorar = partial.operadoresIgnorar;
       if (partial.disparosManuaisHoje !== undefined) next.disparosManuaisHoje = partial.disparosManuaisHoje;
@@ -3716,6 +3833,25 @@ export default function Home() {
     { id: "relatorio",label: "Relatórios",   icon: "📋" },
     { id: "config",   label: "Config",       icon: "⚙️"  },
   ];
+
+  // Carregar do Supabase ao abrir
+  useEffect(()=>{
+    if(DEMO_MODE){setSbLoading(false);return;}
+    (async()=>{
+      try{
+        const [sbSessoes,sbBase]=await Promise.all([sbLoadSessoes(),sbLoadBaseMestre()]);
+        if(sbSessoes.length>0) setSessions(sbSessoes);
+        if(Object.keys(sbBase).length>0){
+          setAppState(prev=>{
+            const next={...prev,baseMestre:{...sbBase,...prev.baseMestre}};
+            saveState(next);return next;
+          });
+        }
+        setSbStatus("ok");
+      }catch(e){console.error("SB load:",e);setSbStatus("err");}
+      finally{setSbLoading(false);}
+    })();
+  },[]);
 
   // Demo Mode — carrega dados fixos automaticamente
   useEffect(()=>{
@@ -3740,7 +3876,14 @@ export default function Home() {
       .catch(e=>{console.error("Demo data error:",e);setDemoLoading(false);});
   },[DEMO_MODE]);
 
-  if (!sessions.length && !DEMO_MODE && !demoLoading) {
+  const handleNewSessions = useCallback(async (newSessions: Session[]) => {
+    const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
+    const unique = newSessions.filter(s=>!existingKeys.has(`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
+    setSessions([...sessions,...unique]);
+    if(unique.length>0) sbSaveSessoes(unique).catch(e=>console.error("SB save:",e));
+  },[sessions]);
+
+  if (!sessions.length && !DEMO_MODE && !demoLoading && !sbLoading) {
     return (
       <div style={{ background: T.bg, minHeight: "100vh", color: T.text }}>
         <style>{`
@@ -3753,7 +3896,7 @@ export default function Home() {
             body { font-size: 14px; }
           }
         `}</style>
-        <UploadScreen onFile={setSessions} />
+        <UploadScreen onFile={handleNewSessions} />
       </div>
     );
   }
@@ -3804,7 +3947,7 @@ export default function Home() {
           <div style={{ padding: "0 28px", height: 56, display: "flex", alignItems: "center", gap: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginRight: 32 }}>
               <HertzGoLogo size={30} />
-              <div style={{ fontFamily: T.mono, fontSize: 9, color: T.text3, letterSpacing: "0.18em", textTransform: "uppercase" }}>Vision v5.3</div>
+              <div style={{ fontFamily: T.mono, fontSize: 9, color: sbLoading?T.amber:sbStatus==="err"?T.red:T.text3, letterSpacing: "0.18em", textTransform: "uppercase" }}>{sbLoading?"⏳ Carregando...":sbStatus==="err"?"⚠️ Offline":"Vision v5.5"}</div>
             </div>
             <nav style={{ display: "flex", gap: 2, flex: 1 }}>
               {TABS.map(t => (
@@ -3875,7 +4018,7 @@ export default function Home() {
             </a>
           </div>
         )}
-        {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={setSessions} />}
+        {tab === "relatorio" && <TabRelatorio sessions={sessions} appState={appState} onAddSessions={handleNewSessions} />}
         {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
         {tab === "config"    && DEMO_MODE && (
           <div style={{padding:"40px 28px",textAlign:"center" as const}}>
