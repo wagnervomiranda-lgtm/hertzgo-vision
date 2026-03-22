@@ -348,13 +348,10 @@ function temCupomDetectado(sessions: Session[], user: string, hubK: string): boo
 
 // ─── VIP SCORE ───────────────────────────────────────────────────────────────
 function calcVipScore(user:string,allOk:Session[],refTs?:number):{score:number;status:"ativo"|"regular"|"em_risco"|"churned";freqAtual:number;freqAnterior:number;diasSemRecarga:number}{
-  // Considerar apenas sessões nas estações próprias para fidelidade real
   const uSess=allOk.filter(s=>s.user===user&&ESTACAO_PROPRIA.includes(s.hubKey));
   if(!uSess.length) return{score:0,status:"churned",freqAtual:0,freqAnterior:0,diasSemRecarga:999};
   const datas=uSess.map(s=>s.date.getTime());
   const maxDt=Math.max(...datas);
-  // Bug fix: usar data máxima do dataset como referência, não Date.now()
-  // Isso evita que usuários apareçam como churned ao carregar CSVs históricos
   const todasDatas=allOk.map(s=>s.date.getTime());
   const hoje=refTs??Math.max(...todasDatas);
   const diasSemRecarga=Math.round((hoje-maxDt)/86400000);
@@ -939,6 +936,12 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
   const warns=saudeEstacoes.filter(e=>e.status==="warn").length;
   const briefingCor=crits>0?T.red:warns>0||acoesAtivas.filter(a=>a.tipo==="op").length>0?T.amber:T.green;
   const briefingEmoji=crits>0?"🔴":warns>0?"🟡":"🟢";
+  const nsmAtivos=new Set(mesAtualOk.map((s:Session)=>s.user)).size||1;
+  const nsmAtual=kwhMes/nsmAtivos;
+  const mesAntOkNsm=ok.filter((s:Session)=>s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear());
+  const nsmAnt=mesAntOkNsm.reduce((a:number,s:Session)=>a+s.energy,0)/(new Set(mesAntOkNsm.map((s:Session)=>s.user)).size||1);
+  const nsmDelta=nsmAnt>0?((nsmAtual-nsmAnt)/nsmAnt*100):0;
+  const nsmCor=nsmDelta>=0?T.green:T.red;
 
   return(
     <div style={{marginBottom:16,background:`${briefingCor}06`,border:`1px solid ${briefingCor}30`,borderRadius:16,overflow:"hidden"}}>
@@ -981,7 +984,7 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
           {/* KPIS */}
           <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:8}}>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8}}>
               {[
                 {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
                 {label:"Energia",ontem:`${kwhOntem.toFixed(0)} kWh`,mes:`${kwhMes.toFixed(0)} kWh`,sub:`${(kwhMes/diasMes).toFixed(0)}/dia`,cor:T.amber},
@@ -997,36 +1000,23 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
                   <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
                 </div>
               ))}
-            </div>
-            {/* NSM — North Star Metric: kWh por usuário ativo */}
-            {(()=>{
-              const ativosNoMes=new Set(mesAtualOk.map(s=>s.user)).size||1;
-              const nsmAtual=kwhMes/ativosNoMes;
-              const mesAntOk=ok.filter(s=>s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear());
-              const ativosAnt=new Set(mesAntOk.map(s=>s.user)).size||1;
-              const nsmAnt=mesAntOk.reduce((a,s)=>a+s.energy,0)/ativosAnt;
-              const nsmDelta=nsmAnt>0?((nsmAtual-nsmAnt)/nsmAnt*100):0;
-              const nsmCor=nsmDelta>=0?T.green:T.red;
-              return(
-                <div style={{background:T.bg2,borderRadius:10,padding:"10px 14px",border:`1px solid ${nsmCor}40`,position:"relative",overflow:"hidden"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:nsmCor}}/>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap" as const,gap:8}}>
-                    <div>
-                      <div style={{fontFamily:T.mono,fontSize:9,color:nsmCor,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:4}}>⭐ NSM — kWh / usuário ativo</div>
-                      <div style={{display:"flex",alignItems:"baseline",gap:10}}>
-                        <span style={{fontFamily:T.sans,fontSize:22,fontWeight:800,color:nsmCor}}>{nsmAtual.toFixed(1)} <span style={{fontSize:12,fontWeight:400,color:T.text2}}>kWh/usuário</span></span>
-                        <span style={{fontFamily:T.mono,fontSize:11,color:nsmCor}}>{nsmDelta>=0?"+":""}{nsmDelta.toFixed(0)}% vs mês ant.</span>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:16,fontFamily:T.mono,fontSize:10,color:T.text2}}>
-                      <div><div style={{fontSize:9,marginBottom:2}}>Usuários ativos</div><div style={{color:T.text,fontWeight:700}}>{ativosNoMes}</div></div>
-                      <div><div style={{fontSize:9,marginBottom:2}}>kWh total mês</div><div style={{color:T.text,fontWeight:700}}>{kwhMes.toFixed(0)}</div></div>
-                      <div><div style={{fontSize:9,marginBottom:2}}>Mês anterior</div><div style={{color:T.text3}}>{nsmAnt.toFixed(1)} kWh/u</div></div>
+              <div style={{gridColumn:"1 / -1",background:T.bg2,borderRadius:10,padding:"10px 14px",border:`1px solid ${nsmCor}40`,position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:nsmCor}}/>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap" as const,gap:8}}>
+                  <div>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:nsmCor,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:4}}>⭐ NSM — kWh / usuário ativo</div>
+                    <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+                      <span style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:nsmCor}}>{nsmAtual.toFixed(1)} <span style={{fontSize:11,fontWeight:400,color:T.text2}}>kWh/usuário</span></span>
+                      <span style={{fontFamily:T.mono,fontSize:11,color:nsmCor}}>{nsmDelta>=0?"+":""}{nsmDelta.toFixed(0)}% vs mês ant.</span>
                     </div>
                   </div>
+                  <div style={{display:"flex",gap:14,fontFamily:T.mono,fontSize:10,color:T.text2}}>
+                    <div><div style={{fontSize:9,marginBottom:2}}>Usuários ativos</div><div style={{color:T.text,fontWeight:700}}>{nsmAtivos}</div></div>
+                    <div><div style={{fontSize:9,marginBottom:2}}>kWh mês</div><div style={{color:T.text,fontWeight:700}}>{kwhMes.toFixed(0)}</div></div>
+                    <div><div style={{fontSize:9,marginBottom:2}}>Mês ant.</div><div style={{color:T.text3}}>{nsmAnt.toFixed(1)}</div></div>
+                  </div>
                 </div>
-              );
-            })()}
+              </div>
             </div>
           </div>
           {/* FATURAMENTO POR ESTAÇÃO */}
@@ -1880,31 +1870,25 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
           if(m>0)msgs.push(`${m} motorista${m>1?"s":""} ✅`);
           if(n>0)msgs.push(`${n} não motorista${n>1?"s":""}`);
           showToast(`WhatsApp: ${msgs.join(" · ")} identificado${msgs.length>1?"s":""}`);
-          // ── DISPARO AUTOMÁTICO MSG 2A/2B ──────────────────────────────
-          // Após identificar, dispara automaticamente a mensagem de continuação
-          // 2A = motorista confirmado | 2B = não motorista (fidelização)
+          // Disparo automático MSG 2A/2B
           for(const r of data){
             if(r.resposta!=="1"&&r.resposta!=="2")continue;
-            const nome=cruzarTelefone(r.telefone);
-            if(!nome)continue;
-            const tel=getTel(nome);
-            if(!tel)continue;
-            // Descobrir estação principal do usuário
-            const sessUser=sessions.filter(s=>s.user.toLowerCase()===nome.toLowerCase()&&!s.cancelled&&s.energy>0);
-            if(!sessUser.length)continue;
-            const hubCount:Record<string,number>={};
-            sessUser.forEach(s=>{hubCount[s.hubKey]=(hubCount[s.hubKey]||0)+1;});
-            const hubK=Object.entries(hubCount).sort((a,b)=>b[1]-a[1])[0]?.[0]||"parkway";
-            const isMotoristaResp=r.resposta==="1";
-            const msgId=isMotoristaResp?"msg2a":"msg2b";
-            const templateKey=isMotoristaResp
-              ?(hubK==="cidadeauto"?"msg2a_cidadeauto":"msg2a_parkway")
-              :(hubK==="costa"?"msg2b_costa":hubK==="cidadeauto"?"msg2b_cidadeauto":"msg2b_parkway");
-            const template=(msgEdits[templateKey]??appState.mensagens[templateKey as keyof Mensagens]??"") as string;
-            if(!template)continue;
-            // Delay de 3s entre disparos para não acionar bloqueio
+            const nomeDisp=cruzarTelefone(r.telefone);
+            if(!nomeDisp)continue;
+            const telDisp=getTel(nomeDisp);
+            if(!telDisp)continue;
+            const sessDisp=sessions.filter(s=>s.user.toLowerCase()===nomeDisp.toLowerCase()&&!s.cancelled&&s.energy>0);
+            if(!sessDisp.length)continue;
+            const hubCnt:Record<string,number>={};
+            sessDisp.forEach(s=>{hubCnt[s.hubKey]=(hubCnt[s.hubKey]||0)+1;});
+            const hubDisp=Object.entries(hubCnt).sort((a,b)=>b[1]-a[1])[0]?.[0]||"parkway";
+            const isMot=r.resposta==="1";
+            const msgIdDisp=isMot?"msg2a":"msg2b";
+            const tplKey=isMot?(hubDisp==="cidadeauto"?"msg2a_cidadeauto":"msg2a_parkway"):(hubDisp==="costa"?"msg2b_costa":hubDisp==="cidadeauto"?"msg2b_cidadeauto":"msg2b_parkway");
+            const tpl=(appState.mensagens[tplKey as keyof typeof appState.mensagens]??"") as string;
+            if(!tpl)continue;
             await new Promise(res=>setTimeout(res,3000));
-            enviarUm(nome,hubK,msgId,template);
+            enviarUm(nomeDisp,hubDisp,msgIdDisp,tpl);
           }
         }
       }
@@ -3373,62 +3357,47 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
         );
       })()}
 
-      {/* ── RADAR WHALE — deterioração entre períodos ────────────────────── */}
+      {/* ── RADAR WHALE ── */}
       {(()=>{
-        // Nick Mehta: divide o período total em duas metades e compara receita por usuário.
-        // Queda ≥40% = CRÍTICO (vermelho). Queda ≥20% = ATENÇÃO (âmbar).
-        // Só roda quando há sessões suficientes para ter dois períodos distintos.
         if(ok.length<10) return null;
         const allTs2=ok.map(s=>s.date.getTime());
         const minTs=Math.min(...allTs2),maxTs2=Math.max(...allTs2);
         const span=maxTs2-minTs;
-        if(span<7*86400000) return null; // menos de 7 dias — sem período útil
+        if(span<7*86400000) return null;
         const mid=minTs+span/2;
-        // Receita por usuário em cada metade
         const rev1:Record<string,number>={};
         const rev2:Record<string,number>={};
         ok.forEach(s=>{
           if(s.date.getTime()<=mid) rev1[s.user]=(rev1[s.user]||0)+s.value;
-          else                       rev2[s.user]=(rev2[s.user]||0)+s.value;
+          else rev2[s.user]=(rev2[s.user]||0)+s.value;
         });
-        // Só considerar usuários que geraram receita no período 1 (eram ativos)
-        const whaleThreshold=200; // mínimo R$200 no período 1 para ser considerado whale/heavy
-        const candidatos=Object.keys(rev1).filter(u=>(rev1[u]||0)>=whaleThreshold);
+        const candidatos=Object.keys(rev1).filter(u=>(rev1[u]||0)>=200);
         const deteriorados=candidatos.map(u=>{
-          const r1=rev1[u]||0;
-          const r2=rev2[u]||0;
-          const delta=r2-r1;
-          const pct=r1>0?(delta/r1*100):0;
+          const r1=rev1[u]||0,r2=rev2[u]||0;
+          const pct=r1>0?((r2-r1)/r1*100):0;
           const seg=motoristas.find(m=>m.user===u)?"Motorista":heavys.find(h=>h.user===u)?"Heavy":"Regular";
           const diasSemRecarga=Math.round((maxTs2-(userStats[u]?.lastTs||maxTs2))/86400000);
-          return{user:u,r1,r2,delta,pct,seg,diasSemRecarga};
-        })
-        .filter(u=>u.pct<=-20) // só quem caiu
-        .sort((a,b)=>a.pct-b.pct); // pior primeiro
+          return{user:u,r1,r2,pct,seg,diasSemRecarga};
+        }).filter(u=>u.pct<=-20).sort((a,b)=>a.pct-b.pct);
         if(deteriorados.length===0) return(
           <Panel style={{marginBottom:24}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"4px 0"}}>
-              <span style={{fontSize:20}}>🐋</span>
-              <div>
-                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Radar Whale — Todos Estáveis</div>
-                <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Nenhum whale/heavy com queda ≥20% entre os períodos</div>
-              </div>
+              <span style={{fontSize:18}}>🐋</span>
+              <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>Radar Whale — Todos Estáveis</div>
             </div>
           </Panel>
         );
         const criticos=deteriorados.filter(u=>u.pct<=-40);
-        const atencao=deteriorados.filter(u=>u.pct>-40&&u.pct<=-20);
         const receitaEmRisco=deteriorados.reduce((a,u)=>a+(u.r1-u.r2),0);
         return(
           <>
             <SectionLabel>🐋 Radar Whale — Deterioração entre Períodos</SectionLabel>
-            {/* KPIs do radar */}
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
               {[
                 {label:"Críticos",val:`${criticos.length}`,sub:"queda ≥40%",cor:T.red},
-                {label:"Atenção",val:`${atencao.length}`,sub:"queda 20–40%",cor:T.amber},
-                {label:"Receita em Risco",val:brl(receitaEmRisco),sub:"delta período 1→2",cor:T.red},
-                {label:"Whales Monitorados",val:`${candidatos.length}`,sub:"com ≥R$200 no P1",cor:T.text2},
+                {label:"Atenção",val:`${deteriorados.length-criticos.length}`,sub:"queda 20–40%",cor:T.amber},
+                {label:"Receita em Risco",val:brl(receitaEmRisco),sub:"delta P1→P2",cor:T.red},
+                {label:"Monitorados",val:`${candidatos.length}`,sub:"≥R$200 no P1",cor:T.text2},
               ].map((k,i)=>(
                 <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px",position:"relative",overflow:"hidden"}}>
                   <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
@@ -3438,26 +3407,22 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
                 </div>
               ))}
             </div>
-            {/* Lista de deteriorados */}
             <Panel style={{marginBottom:24}}>
-              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:10}}>
-                Comparando <span style={{color:T.text}}>Período 1</span> (metade inicial) vs <span style={{color:T.text}}>Período 2</span> (metade recente) — carregue dois CSVs para maior precisão
-              </div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:10}}>Comparando metade inicial vs metade recente do período carregado</div>
               <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
                 {deteriorados.slice(0,8).map(u=>{
                   const isCrit=u.pct<=-40;
                   const cor=isCrit?T.red:T.amber;
-                  const badge=isCrit?"🔴 Crítico":"🟡 Atenção";
                   return(
                     <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:T.bg3,borderRadius:10,border:`1px solid ${cor}20`,gap:8,flexWrap:"wrap" as const}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
-                        <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}15`,color:cor,flexShrink:0}}>{badge}</span>
+                        <span style={{fontFamily:T.mono,fontSize:10,padding:"2px 7px",borderRadius:4,background:`${cor}15`,color:cor,flexShrink:0}}>{isCrit?"🔴 Crítico":"🟡 Atenção"}</span>
                         <span style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{trunc(u.user,isMobile?14:26)}</span>
                         <span style={{fontFamily:T.mono,fontSize:9,color:T.text3,flexShrink:0}}>{u.seg}</span>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:14,flexShrink:0}}>
                         <div style={{textAlign:"right" as const}}>
-                          <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{brl(u.r1)} <span style={{color:T.text3}}>→</span> {brl(u.r2)}</div>
+                          <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>{brl(u.r1)} → {brl(u.r2)}</div>
                           <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{u.diasSemRecarga>0?`${u.diasSemRecarga}d sem recarregar`:""}</div>
                         </div>
                         <div style={{fontFamily:T.sans,fontSize:14,fontWeight:800,color:cor,minWidth:50,textAlign:"right" as const}}>{u.pct.toFixed(0)}%</div>
@@ -3466,10 +3431,10 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
                   );
                 })}
               </div>
-              {deteriorados.length>8&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,marginTop:8}}>+{deteriorados.length-8} outros com deterioração</div>}
+              {deteriorados.length>8&&<div style={{textAlign:"center" as const,fontFamily:T.mono,fontSize:10,color:T.text3,marginTop:8}}>+{deteriorados.length-8} outros</div>}
               <div style={{marginTop:12,padding:"10px 12px",background:`${T.amber}08`,border:`1px solid ${T.amber}20`,borderRadius:8}}>
                 <div style={{fontFamily:T.mono,fontSize:10,color:T.amber,marginBottom:2}}>⚡ Próximo passo</div>
-                <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Vá para <strong style={{color:T.text}}>Ações → Fila do Dia</strong> para disparar MSG Risco para os críticos. Eles já aparecem priorizados na fila.</div>
+                <div style={{fontFamily:T.mono,fontSize:10,color:T.text2}}>Vá para <strong style={{color:T.text}}>Ações → Fila do Dia</strong> para disparar MSG Risco para os críticos.</div>
               </div>
             </Panel>
           </>
