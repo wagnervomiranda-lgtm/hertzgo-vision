@@ -3919,7 +3919,7 @@ export default function Home() {
 
   // Usuários sem cadastro na Base Mestre
   const semCadastroAlerta = useMemo(()=>{
-    const nomes = [...new Set(sessions.map(s=>s.user))];
+    const nomes = Array.from(new Set(sessions.map(s=>s.user)));
     return nomes.filter(nome=>{
       const bm = appState.baseMestre[nome.toLowerCase()];
       return !bm || !bm.temTel;
