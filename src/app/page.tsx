@@ -299,6 +299,7 @@ async function sbLoadBaseMestre(): Promise<BaseMestre> {
       email: (r.email as string) || "",
       telefone: (r.telefone as string) || "",
       temTel: Boolean(r.telefone),
+      importadoEm: (r.atualizado_em as string) || new Date().toISOString(),
     };
   });
   return base;
