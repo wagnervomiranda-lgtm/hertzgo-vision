@@ -1181,6 +1181,26 @@ function BriefingDiario({sessions,appState,meta,isMobile,onIrParaAcoes}:{
                     );
                   })}
                 </tbody>
+                {(()=>{
+                  const totOntem=saudeEstacoes.reduce((a,e)=>a+e.revOntem,0);
+                  const totMes=saudeEstacoes.reduce((a,e)=>a+mesAtualOk.filter(s=>s.hubKey===e.hub).reduce((x,s)=>x+s.value,0),0);
+                  const totKwh=saudeEstacoes.reduce((a,e)=>a+mesAtualOk.filter(s=>s.hubKey===e.hub).reduce((x,s)=>x+s.energy,0),0);
+                  const diasM=new Set(mesAtualOk.map(s=>s.date.toDateString())).size||1;
+                  const totProj=totMes/diasM*30;
+                  const precoMedio=totKwh>0?totMes/totKwh:0;
+                  return(
+                    <tfoot>
+                      <tr style={{borderTop:`2px solid ${T.border}`,background:T.bg3}}>
+                        <td style={{...TD,fontFamily:T.mono,fontSize:10,fontWeight:700,color:T.text2,letterSpacing:"0.05em"}}>TOTAL REDE</td>
+                        <td style={{...TDR,fontWeight:700,color:totOntem>0?T.green:T.text3,fontSize:12}}>{totOntem>0?brl(totOntem):"—"}</td>
+                        <td style={{...TDR,fontWeight:700,color:T.text,fontSize:12}}>{brl(totMes)}</td>
+                        <td style={{...TDR,fontWeight:700,color:T.amber,fontSize:12}}>{brl(totProj)}</td>
+                        <td style={{...TDR,fontWeight:700,color:T.blue,fontSize:11}}>R${precoMedio.toFixed(2)}</td>
+                        <td style={TD}/>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
               </table>
             </div>
           </div>
@@ -1355,7 +1375,7 @@ function UsuariosAtencaoCard({motoristasRisco,novosHoje,appState,sessions,isMobi
 }
 
 
-function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void;appState:AppState}){
+function TabDashboard({sessions,meta,onMetaChange,appState,onIrParaAcoes}:{sessions:Session[];meta:number;onMetaChange:(v:number)=>void;appState:AppState;onIrParaAcoes?:()=>void}){
   const isMobile=useIsMobile();
   const[activeHub,setActiveHub]=useState("__all__");
   const hubs=useMemo(()=>Array.from(new Set(sessions.map(s=>s.hubKey))).sort(),[sessions]);
@@ -1417,7 +1437,7 @@ function TabDashboard({sessions,meta,onMetaChange,appState}:{sessions:Session[];
         {hasMove&&<span style={{background:"rgba(59,130,246,0.1)",color:"#60a5fa",padding:"2px 7px",borderRadius:4,fontSize:9,border:"1px solid rgba(59,130,246,0.2)"}}>Move</span>}
       </div>
       {/* ── BRIEFING DIÁRIO ─────────────────────────────────────────── */}
-      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} onIrParaAcoes={()=>setTab("acoes")} />
+      <BriefingDiario sessions={sessions} appState={appState} meta={meta} isMobile={isMobile} onIrParaAcoes={onIrParaAcoes} />
 
             {/* TERMÔMETRO NEON — Receita Hoje vs Mês */}
       {(()=>{
@@ -4313,7 +4333,7 @@ export default function Home() {
 
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
-        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} />}
+        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} onIrParaAcoes={()=>setTab("acoes")} />}
         {tab === "dre"       && <TabDRE sessions={sessionsFiltradas} appState={appState} />}
         {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessionsFiltradas} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "acoes" && DEMO_MODE && (
