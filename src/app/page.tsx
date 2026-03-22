@@ -981,34 +981,52 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
           {/* KPIS */}
           <div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>KPIs — Ontem vs {mesNome}</div>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(5,1fr)",gap:8}}>
-              {(()=>{
-                // NSM: kWh por usuário ativo no mês (usuários com ≥1 sessão no mês atual)
-                const ativosNoMes=new Set(mesAtualOk.map(s=>s.user)).size||1;
-                const nsmAtual=kwhMes/ativosNoMes;
-                const mesAntOk=ok.filter(s=>s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear());
-                const ativosAnt=new Set(mesAntOk.map(s=>s.user)).size||1;
-                const kwhMesAnt=mesAntOk.reduce((a,s)=>a+s.energy,0);
-                const nsmAnt=kwhMesAnt/ativosAnt;
-                const nsmDelta=nsmAnt>0?((nsmAtual-nsmAnt)/nsmAnt*100):0;
-                const nsmCor=nsmDelta>=0?T.green:T.red;
-                return[
-                  {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
-                  {label:"Energia",ontem:`${kwhOntem.toFixed(0)} kWh`,mes:`${kwhMes.toFixed(0)} kWh`,sub:`${(kwhMes/diasMes).toFixed(0)}/dia`,cor:T.amber},
-                  {label:"Sessões",ontem:`${sessOntem}`,mes:`${sessMes}`,sub:`${(sessMes/diasMes).toFixed(1)}/dia`,cor:T.blue},
-                  {label:"Ticket",ontem:sessOntem>0?brl(revOntem/sessOntem):"—",mes:sessMes>0?brl(revMes/sessMes):"—",sub:`R$${kwhMes>0?(revMes/kwhMes).toFixed(2):"-"}/kWh`,cor:T.purple},
-                  {label:"⭐ NSM",ontem:`${nsmAnt.toFixed(0)} kWh`,mes:`${nsmAtual.toFixed(0)} kWh`,sub:`${nsmDelta>=0?"+":""}${nsmDelta.toFixed(0)}% vs mês ant.`,cor:nsmCor},
-                ].map((k,i)=>(
-                  <div key={i} style={{background:T.bg2,borderRadius:10,padding:"10px 12px",border:`1px solid ${i===4?nsmCor+"40":T.border}`,position:"relative",overflow:"hidden"}}>
-                    {i===4&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:nsmCor}}/>}
-                    <div style={{fontFamily:T.mono,fontSize:9,color:i===4?nsmCor:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                      <div><div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>Ant.</div><div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text2}}>{k.ontem}</div></div>
-                      <div><div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>{mesNome.slice(0,3)}</div><div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:k.cor}}>{k.mes}</div></div>
-                    </div>
-                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:8}}>
+              {[
+                {label:"Receita",ontem:brl(revOntem),mes:brl(revMes),sub:`proj. ${brl(projMes)}`,cor:T.green},
+                {label:"Energia",ontem:`${kwhOntem.toFixed(0)} kWh`,mes:`${kwhMes.toFixed(0)} kWh`,sub:`${(kwhMes/diasMes).toFixed(0)}/dia`,cor:T.amber},
+                {label:"Sessões",ontem:`${sessOntem}`,mes:`${sessMes}`,sub:`${(sessMes/diasMes).toFixed(1)}/dia`,cor:T.blue},
+                {label:"Ticket",ontem:sessOntem>0?brl(revOntem/sessOntem):"—",mes:sessMes>0?brl(revMes/sessMes):"—",sub:`R$${kwhMes>0?(revMes/kwhMes).toFixed(2):"-"}/kWh`,cor:T.purple},
+              ].map((k,i)=>(
+                <div key={i} style={{background:T.bg2,borderRadius:10,padding:"10px 12px",border:`1px solid ${T.border}`}}>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                    <div><div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>Ontem</div><div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:k.cor}}>{k.ontem}</div></div>
+                    <div><div style={{fontFamily:T.mono,fontSize:8,color:T.text2,marginBottom:2}}>{mesNome.slice(0,3)}</div><div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:T.text2}}>{k.mes}</div></div>
                   </div>
-                ))})()}
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:4}}>{k.sub}</div>
+                </div>
+              ))}
+            </div>
+            {/* NSM — North Star Metric: kWh por usuário ativo */}
+            {(()=>{
+              const ativosNoMes=new Set(mesAtualOk.map(s=>s.user)).size||1;
+              const nsmAtual=kwhMes/ativosNoMes;
+              const mesAntOk=ok.filter(s=>s.date.getMonth()===mesAnteriorDate.getMonth()&&s.date.getFullYear()===mesAnteriorDate.getFullYear());
+              const ativosAnt=new Set(mesAntOk.map(s=>s.user)).size||1;
+              const nsmAnt=mesAntOk.reduce((a,s)=>a+s.energy,0)/ativosAnt;
+              const nsmDelta=nsmAnt>0?((nsmAtual-nsmAnt)/nsmAnt*100):0;
+              const nsmCor=nsmDelta>=0?T.green:T.red;
+              return(
+                <div style={{background:T.bg2,borderRadius:10,padding:"10px 14px",border:`1px solid ${nsmCor}40`,position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:nsmCor}}/>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap" as const,gap:8}}>
+                    <div>
+                      <div style={{fontFamily:T.mono,fontSize:9,color:nsmCor,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:4}}>⭐ NSM — kWh / usuário ativo</div>
+                      <div style={{display:"flex",alignItems:"baseline",gap:10}}>
+                        <span style={{fontFamily:T.sans,fontSize:22,fontWeight:800,color:nsmCor}}>{nsmAtual.toFixed(1)} <span style={{fontSize:12,fontWeight:400,color:T.text2}}>kWh/usuário</span></span>
+                        <span style={{fontFamily:T.mono,fontSize:11,color:nsmCor}}>{nsmDelta>=0?"+":""}{nsmDelta.toFixed(0)}% vs mês ant.</span>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:16,fontFamily:T.mono,fontSize:10,color:T.text2}}>
+                      <div><div style={{fontSize:9,marginBottom:2}}>Usuários ativos</div><div style={{color:T.text,fontWeight:700}}>{ativosNoMes}</div></div>
+                      <div><div style={{fontSize:9,marginBottom:2}}>kWh total mês</div><div style={{color:T.text,fontWeight:700}}>{kwhMes.toFixed(0)}</div></div>
+                      <div><div style={{fontSize:9,marginBottom:2}}>Mês anterior</div><div style={{color:T.text3}}>{nsmAnt.toFixed(1)} kWh/u</div></div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             </div>
           </div>
           {/* FATURAMENTO POR ESTAÇÃO */}
