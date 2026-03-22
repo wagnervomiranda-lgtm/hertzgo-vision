@@ -1189,7 +1189,7 @@ function BriefingDiario({sessions,appState,meta,isMobile}:{
             const[selAtencao,setSelAtencao]=React.useState<Set<string>>(new Set());
             const[disparandoAtencao,setDisparandoAtencao]=React.useState(false);
             const toggleSel=(nome:string)=>setSelAtencao(prev=>{const n=new Set(prev);n.has(nome)?n.delete(nome):n.add(nome);return n;});
-            const jaContactado=(nome:string,msgId:string)=>disparosLog.some(d=>d.nome===nome&&d.msgId===msgId&&(Date.now()-new Date(d.ts).getTime())<7*86400000);
+            const jaContactado=(nome:string,msgId:string)=>(appState.disparos||[]).some((d:{nome:string;msgId:string;ts:string})=>d.nome===nome&&d.msgId===msgId&&(Date.now()-new Date(d.ts).getTime())<7*86400000);
             const hasTel=(nome:string)=>!!(appState.baseMestre[nome.toLowerCase()]?.temTel);
             const dispararRapido=async(users:string[],msgId:string)=>{
               if(disparandoAtencao)return;
@@ -4312,7 +4312,7 @@ export default function Home() {
 
       {/* ── CONTEÚDO DAS ABAS ── */}
       <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
-        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} onDisparoRapido={onDisparoRapido} disparosLog={appState.disparos||[]} />}
+        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} onDisparoRapido={onDisparoRapido} />}
         {tab === "dre"       && <TabDRE sessions={sessionsFiltradas} appState={appState} />}
         {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessionsFiltradas} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
         {tab === "acoes" && DEMO_MODE && (
