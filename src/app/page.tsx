@@ -125,6 +125,7 @@ interface AppState {
   disparosManuaisHoje: number; // contador manual atualizado por Wagner
   mercado: {
     concorrentes: {nome:string;rede:string;precoKwh:number;tipo:string;lat?:number;lng?:number;atualizadoEm:string}[];
+    estacoesOCM: {nome:string;lat:number;lng:number;rede:string;tipo:string}[];
     ocmAtualizadoEm: string;
   };
 }
@@ -213,7 +214,7 @@ function defaultState(): AppState {
     baseMestre: {}, userOverrides: {}, limiteDisparoDiario: 30,
     operadoresIgnorar: ["wagner miranda", "wagner vinícius", "executivo"],
     disparosManuaisHoje: 0,
-    mercado: {concorrentes:[],ocmAtualizadoEm:""},
+    mercado: {concorrentes:[],estacoesOCM:[],ocmAtualizadoEm:""},
   };
 }
 function loadState(): AppState {
@@ -1617,13 +1618,11 @@ function FilaDoDia({sessions,appState,localDisparos,getMsgTemplate,abrirPreview,
 
   const iniciarDisparo=async()=>{
     if(fila.length===0){return;}
-    // Verificar limite diário
     const dispHoje=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
     const manHoje=appState.disparosManuaisHoje||0;
     const limDia=appState.limiteDisparoDiario||30;
     const slotsLiv=Math.max(0,limDia-dispHoje-manHoje);
     if(slotsLiv<=0){alert(`Limite diário de ${limDia} disparos atingido.`);return;}
-    // Verificar horário
     const hIni=appState.metas["crm_inicio"]||9;
     const hFm=appState.metas["crm_fim"]||18;
     const horaAgora=new Date().getHours();
@@ -1639,7 +1638,6 @@ Limite restante: ${slotsLiv}/${limDia}`))return;
     const disparar=async(i:number)=>{
       if(i>=filaLimitada.length){setAutoStatus("done");return;}
       if(pausedRef.current){setAutoStatus("paused");return;}
-      // Verificar horário a cada disparo
       const horaCurr=new Date().getHours();
       if(horaCurr>=hFm){setAutoStatus("done");setAutoLog(prev=>[{nome:"⏰ Horário encerrado",status:"ok" as const,ts:new Date()},...prev]);return;}
       const u=filaLimitada[i];setAutoIdx(i);
@@ -1885,7 +1883,6 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
           if(m>0)msgs.push(`${m} motorista${m>1?"s":""} ✅`);
           if(n>0)msgs.push(`${n} não motorista${n>1?"s":""}`);
           showToast(`WhatsApp: ${msgs.join(" · ")} identificado${msgs.length>1?"s":""}`);
-          // Disparo automático MSG 2A/2B
           for(const r of data){
             if(r.resposta!=="1"&&r.resposta!=="2")continue;
             const nomeDisp=cruzarTelefone(r.telefone);
@@ -1902,7 +1899,6 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
             const tplKey=isMot?(hubDisp==="cidadeauto"?"msg2a_cidadeauto":"msg2a_parkway"):(hubDisp==="costa"?"msg2b_costa":hubDisp==="cidadeauto"?"msg2b_cidadeauto":"msg2b_parkway");
             const tpl=(appState.mensagens[tplKey as keyof typeof appState.mensagens]??"") as string;
             if(!tpl)continue;
-            // Segurança anti-bloqueio: delay mínimo de 3min entre disparos automáticos
             const dMinAuto=appState.metas["crm_intervalo_min"]||3;
             const dMaxAuto=appState.metas["crm_intervalo_max"]||8;
             const delayAutoMs=Math.floor(Math.random()*(dMaxAuto-dMinAuto+1)+dMinAuto)*60000;
@@ -1964,20 +1960,17 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
   const enviarLote=async(section:string,lista:UserData[],msgId:string,template:string,cupom:string="")=>{
     const sel=getSel(section);const elegíveis=lista.filter(u=>sel.has(u.user)&&getTel(u.user));
     if(!elegíveis.length){alert("Nenhum selecionado com telefone.");return;}
-    // Verificar limite diário antes de disparar
     const disparadosHoje2=localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<86400000).length;
     const manuaisHoje2=appState.disparosManuaisHoje||0;
     const limiteDisp=appState.limiteDisparoDiario||30;
     const slotsRestantes=Math.max(0,limiteDisp-disparadosHoje2-manuaisHoje2);
     if(slotsRestantes<=0){alert(`Limite diário de ${limiteDisp} disparos atingido. Tente amanhã.`);return;}
-    // Verificar horário configurado
     const hInicio=appState.metas["crm_inicio"]||9;
     const hFim=appState.metas["crm_fim"]||18;
     const agora=new Date().getHours();
-    if(agora<hInicio||agora>=hFim){alert(`Disparos configurados apenas entre ${hInicio}h e ${hFim}h. Acesse Config → Z-API para ajustar.`);return;}
+    if(agora<hInicio||agora>=hFim){alert(`Disparos configurados apenas entre ${hInicio}h e ${hFim}h.`);return;}
     const elegiveisLimitados=elegíveis.slice(0,slotsRestantes);
     if(elegiveisLimitados.length<elegíveis.length){alert(`Você tem ${slotsRestantes} slots restantes hoje. Serão enviados ${elegiveisLimitados.length} de ${elegíveis.length} selecionados.`);}
-    // Modal inline — não usa confirm() nativo
     await new Promise<void>((resolve,reject)=>{
       setConfirmModal({msg:`Disparar para ${elegiveisLimitados.length} usuário${elegiveisLimitados.length>1?"s":""}?
 Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_intervalo_max"]||45} min entre cada`,qtd:elegiveisLimitados.length,onConfirm:()=>{setConfirmModal(null);resolve();}});
@@ -1991,7 +1984,6 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
         const dMax=appState.metas["crm_intervalo_max"]||45;
         const delayMs=Math.floor(Math.random()*(dMax-dMin+1)+dMin)*60000;
         await new Promise(r=>setTimeout(r,delayMs));
-        // Verificar horário a cada iteração
         const horaAtual=new Date().getHours();
         if(horaAtual>=hFim){setEnviandoLote(p=>({...p,[section]:false}));alert(`Horário de disparo encerrado (${hFim}h). ${i+1} de ${elegiveisLimitados.length} enviados.`);return;}
       }
@@ -3682,8 +3674,9 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
         );
       })()}
 
-      {/* ── 4. ARGUMENTO COMERCIAL POR ESTAÇÃO ───────────────────────────── */}
 
     </div>
   );
 }
+
+export default function Home(
