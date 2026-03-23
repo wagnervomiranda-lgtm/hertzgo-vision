@@ -4642,6 +4642,9 @@ export default function Home() {
           <div style={{fontFamily:T.mono,fontSize:10,color:"#60A5FA"}}>Ver fila 🚗 Convite Motorista em Ações</div>
         </div>
       )}
+        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} onIrParaAcoes={()=>setTab("acoes")} />}
+        {tab === "dre"       && <TabDRE sessions={sessionsFiltradas} appState={appState} />}
+        {tab === "acoes"     && <TabAcoes sessions={sessionsFiltradas} appState={appState} onSaveDisparos={d=>handleSave({disparos:d})} onSaveState={handleSave} />}
         {tab === "relatorio" && <TabRelatorio sessions={sessionsFiltradas} appState={appState} onAddSessions={handleNewSessions} />}
         {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
         {tab === "config"    && DEMO_MODE && (
