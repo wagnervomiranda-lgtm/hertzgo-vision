@@ -4610,6 +4610,7 @@ export default function Home() {
       </header>
 
       {/* ── ALERTA USUÁRIOS SEM CADASTRO ── */}
+      <main style={{flex:1}}>
       {semCadastroAlerta.length>0&&(
         <div style={{margin:"0 16px 0",padding:"10px 16px",background:"rgba(255,171,0,0.08)",border:"1px solid rgba(255,171,0,0.25)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" as const}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
