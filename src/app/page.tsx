@@ -2384,6 +2384,257 @@ function RegistrosManuaisPanel({sessions,appState,showToast,T,trunc}:{
 }
 
 
+// ─── CICLO CRM — RESULTADOS COMPLETOS ────────────────────────────────────────
+function CicloResultadosCRM({sessions,appState,isMobile,ok}:{
+  sessions:Session[];appState:AppState;isMobile:boolean;ok:Session[];
+}){
+  const disparos=appState.disparos||[];
+  const enviados=disparos.filter(d=>d.status==="ok");
+
+  if(enviados.length===0) return(
+    <Panel style={{marginBottom:24}}>
+      <div style={{textAlign:"center" as const,padding:"20px",fontFamily:T.mono,fontSize:11,color:T.text3}}>
+        Nenhum disparo registrado ainda — comece pela Fila do Dia
+      </div>
+    </Panel>
+  );
+
+  // ── Cruzamento disparo → sessão posterior ──────────────────────────────────
+  const convertidos=enviados.filter(d=>{
+    const ts=new Date(d.ts).getTime();
+    return ok.some(s=>s.user===d.nome&&s.date.getTime()>ts);
+  });
+
+  // Não convertidos mas contactados
+  const naoConvertidos=enviados.filter(d=>{
+    const ts=new Date(d.ts).getTime();
+    return !ok.some(s=>s.user===d.nome&&s.date.getTime()>ts);
+  });
+
+  // Métricas por tipo de mensagem
+  const msgIds=Array.from(new Set(enviados.map(d=>d.msgId)));
+  const porMensagem=msgIds.map(msgId=>{
+    const env=enviados.filter(d=>d.msgId===msgId);
+    const conv=env.filter(d=>{
+      const ts=new Date(d.ts).getTime();
+      return ok.some(s=>s.user===d.nome&&s.date.getTime()>ts);
+    });
+    return{msgId,enviados:env.length,convertidos:conv.length,taxa:env.length>0?(conv.length/env.length*100):0};
+  }).sort((a,b)=>b.taxa-a.taxa);
+
+  // Respostas do webhook (usuários que responderam 1 ou 2)
+  const comOverride=enviados.filter(d=>appState.userOverrides[d.nome.toLowerCase()]?.respostaMsg1);
+  const motoristasIdentificados=comOverride.filter(d=>appState.userOverrides[d.nome.toLowerCase()]?.isMotorista===true);
+  const naoMotoristas=comOverride.filter(d=>appState.userOverrides[d.nome.toLowerCase()]?.isMotorista===false);
+
+  // Tempo médio de retorno
+  const temposRetorno=convertidos.map(d=>{
+    const ts=new Date(d.ts).getTime();
+    const primeira=ok.filter(s=>s.user===d.nome&&s.date.getTime()>ts).sort((a,b)=>a.date.getTime()-b.date.getTime())[0];
+    return primeira?(primeira.date.getTime()-ts)/86400000:null;
+  }).filter(Boolean) as number[];
+  const tempoMedio=temposRetorno.length>0?temposRetorno.reduce((a,b)=>a+b,0)/temposRetorno.length:0;
+
+  // Receita gerada pós-campanha
+  const receitaPos=convertidos.reduce((a,d)=>{
+    const ts=new Date(d.ts).getTime();
+    return a+ok.filter(s=>s.user===d.nome&&s.date.getTime()>ts).reduce((b,s)=>b+s.value,0);
+  },0);
+
+  const taxaConversao=enviados.length>0?(convertidos.length/enviados.length*100):0;
+  const taxaResposta=enviados.length>0?(comOverride.length/enviados.length*100):0;
+
+  const msgLabel=(id:string)=>{
+    const map:Record<string,string>={
+      msg1:"🌱 Boas-vindas",msg2a:"🚗 Convite Motorista",msg2b:"⭐ Fidelização",
+      msg_vip:"👑 VIP",msg_risco:"🔴 Reativação",msg_churn:"💔 Última Tentativa",
+    };
+    return map[id]||id;
+  };
+
+  return(
+    <>
+      {/* KPIs principais */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
+        {[
+          {label:"Disparos",val:`${enviados.length}`,sub:"total enviados",cor:T.text2},
+          {label:"Convertidos",val:`${convertidos.length}`,sub:`${taxaConversao.toFixed(0)}% voltaram a carregar`,cor:T.green},
+          {label:"Responderam",val:`${comOverride.length}`,sub:`${taxaResposta.toFixed(0)}% de resposta`,cor:T.amber},
+          {label:"Receita Gerada",val:brl(receitaPos),sub:"pós-campanha",cor:T.teal},
+        ].map((k,i)=>(
+          <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:k.cor,opacity:0.8}}/>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
+            <div style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:k.cor,marginBottom:4}}>{k.val}</div>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* KPIs secundários */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:8,marginBottom:16}}>
+        {[
+          {label:"Motoristas ID",val:`${motoristasIdentificados.length}`,sub:"confirmados via WhatsApp",cor:T.red},
+          {label:"Não motoristas",val:`${naoMotoristas.length}`,sub:"confirmados via WhatsApp",cor:T.blue},
+          {label:"Tempo médio retorno",val:tempoMedio>0?`${tempoMedio.toFixed(1)}d`:"—",sub:"dias até recarregar",cor:T.amber},
+          {label:"Sem resposta",val:`${naoConvertidos.length}`,sub:"não voltaram ainda",cor:T.text3},
+        ].map((k,i)=>(
+          <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px"}}>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,textTransform:"uppercase" as const,letterSpacing:"0.08em",marginBottom:4}}>{k.label}</div>
+            <div style={{fontFamily:T.sans,fontSize:16,fontWeight:700,color:k.cor}}>{k.val}</div>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Taxa por tipo de mensagem */}
+      {porMensagem.length>0&&(
+        <Panel style={{marginBottom:16}}>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>📊 Conversão por Mensagem</div>
+          <div style={{display:"flex",flexDirection:"column" as const,gap:8}}>
+            {porMensagem.map(m=>(
+              <div key={m.msgId}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>{msgLabel(m.msgId)}</span>
+                  <span style={{fontFamily:T.mono,fontSize:11,color:m.taxa>=50?T.green:m.taxa>=25?T.amber:T.text3}}>
+                    {m.convertidos}/{m.enviados} · {m.taxa.toFixed(0)}%
+                  </span>
+                </div>
+                <div style={{height:4,background:T.bg3,borderRadius:2}}>
+                  <div style={{height:"100%",width:`${m.taxa}%`,background:m.taxa>=50?T.green:m.taxa>=25?T.amber:T.text3,borderRadius:2,transition:"width .3s"}}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {/* Lista de convertidos */}
+      {convertidos.length>0&&(
+        <Panel style={{marginBottom:16}}>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>✅ Convertidos — voltaram após contato</div>
+          <div style={{display:"flex",flexDirection:"column" as const,gap:6,maxHeight:240,overflowY:"auto" as const}}>
+            {convertidos.map(d=>{
+              const ts=new Date(d.ts).getTime();
+              const sessApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>ts);
+              const receitaU=sessApos.reduce((a,s)=>a+s.value,0);
+              const diasRet=sessApos.length>0?Math.round((sessApos[0].date.getTime()-ts)/86400000):0;
+              const ov=appState.userOverrides[d.nome.toLowerCase()];
+              return(
+                <div key={d.ts+d.nome} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg3,borderRadius:8,border:`1px solid ${T.green}20`}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:500,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{trunc(d.nome,isMobile?16:28)}</div>
+                    <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,display:"flex",gap:8,marginTop:2}}>
+                      <span>{msgLabel(d.msgId)}</span>
+                      <span>retornou em {diasRet}d</span>
+                      <span>{sessApos.length} sess</span>
+                      {ov?.isMotorista===true&&<span style={{color:T.red}}>🚗 motorista</span>}
+                    </div>
+                  </div>
+                  <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green,flexShrink:0}}>{brl(receitaU)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
+
+      {/* Lista de não convertidos — oportunidade */}
+      {naoConvertidos.length>0&&naoConvertidos.length<=20&&(
+        <Panel style={{marginBottom:16}}>
+          <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>⏳ Ainda não voltaram — reativar</div>
+          <div style={{display:"flex",flexDirection:"column" as const,gap:4,maxHeight:160,overflowY:"auto" as const}}>
+            {naoConvertidos.slice(0,10).map(d=>{
+              const diasDesde=Math.round((Date.now()-new Date(d.ts).getTime())/86400000);
+              return(
+                <div key={d.ts+d.nome} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 10px",background:T.bg3,borderRadius:6}}>
+                  <span style={{fontFamily:T.mono,fontSize:11,color:T.text2}}>{trunc(d.nome,20)}</span>
+                  <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{diasDesde}d atrás · {msgLabel(d.msgId)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
+    </>
+  );
+}
+
+
+// ─── FILA PROSPECTS MADEIRO/MAMUTE ───────────────────────────────────────────
+function ProspectsFilaPanel({sessions,appState,localDisparos,getMsgTemplate,abrirPreview,enviarUm,onSaveState,isMobile,sending}:{
+  sessions:Session[];appState:AppState;
+  localDisparos:{ts:string;nome:string;msgId:string;status:"ok"|"err";msg?:string}[];
+  getMsgTemplate:(k:string)=>string;
+  abrirPreview:(nome:string,hubK:string,msgId:string,template:string,cupom:string)=>void;
+  enviarUm:(nome:string,hubK:string,msgId:string,template:string,cupom:string)=>Promise<void>;
+  onSaveState:(p:Partial<AppState>)=>void;
+  isMobile:boolean;
+  sending:Record<string,boolean>;
+}){
+  const CONTRATUAIS=["madeiro_sia","madeiro_sp","mamute"];
+  const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
+  const users=classificarUsuarios(ok);
+  const jaContatado=(nome:string,msgId:string)=>(appState.disparos||[]).some(d=>
+    d.nome===nome&&d.msgId===msgId&&(Date.now()-new Date(d.ts).getTime())<30*86400000
+  );
+  const getTel=(nome:string)=>appState.baseMestre[nome.toLowerCase()]?.telefone||
+    Object.values(appState.contatos).flatMap(c=>c.dados).find(d=>d.nome.toLowerCase().includes(nome.toLowerCase()))?.telefone||"";
+
+  // Prospects: usuários cuja estação principal é contratual e não foram contatados para migração
+  const estacaoPrincipal:Record<string,string>={};
+  ok.forEach(s=>{if(!estacaoPrincipal[s.user.toLowerCase()])estacaoPrincipal[s.user.toLowerCase()]=s.hubKey;});
+
+  const prospects=users.filter(u=>{
+    const est=estacaoPrincipal[u.user.toLowerCase()]||"";
+    return CONTRATUAIS.some(c=>est.includes(c))&&!jaContatado(u.user,"msg2a")&&getTel(u.user);
+  }).sort((a,b)=>b.rev-a.rev).slice(0,20);
+
+  if(prospects.length===0)return null;
+
+  return(
+    <div style={{marginBottom:24}}>
+      <SectionLabel>🎯 Prospects — Migrar Madeiro/Mamute → Park Way</SectionLabel>
+      <Panel>
+        <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:14,lineHeight:1.7}}>
+          {prospects.length} cliente{prospects.length>1?"s":""} carregando nas estações contratuais.
+          Envie o convite para migrar para o Park Way.
+        </div>
+        <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
+          {prospects.map(u=>{
+            const hubK=estacaoPrincipal[u.user.toLowerCase()]||"madeiro_sia";
+            const tpl=getMsgTemplate("msg2a_parkway");
+            const isSending=sending[u.user];
+            return(
+              <div key={u.user} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg3,borderRadius:8,border:"1px solid rgba(59,130,246,0.15)",gap:8,flexWrap:"wrap" as const}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>
+                    {trunc(u.user,isMobile?18:28)}
+                  </div>
+                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginTop:2}}>
+                    {hubNome(hubK)} · {u.sess} sess · {brl(u.rev)}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={()=>abrirPreview(u.user,hubK,"msg2a",tpl,"")}
+                    style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${T.border}`,background:T.bg2,color:T.text2,fontFamily:T.mono,fontSize:10,cursor:"pointer"}}>
+                    👁 Ver
+                  </button>
+                  <button onClick={()=>enviarUm(u.user,hubK,"msg2a",tpl,"")} disabled={isSending}
+                    style={{padding:"4px 12px",borderRadius:6,border:"1px solid rgba(59,130,246,0.4)",background:"rgba(59,130,246,0.1)",color:"#60A5FA",fontFamily:T.mono,fontSize:10,cursor:"pointer",fontWeight:700}}>
+                    {isSending?"⏳":"📤 Convidar"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+
 function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void;onSaveState:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
@@ -2773,6 +3024,7 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
 
       {/* FILA DO DIA — ALGORITMO INTELIGENTE */}
       <FilaDoDia sessions={sessions} appState={appState} localDisparos={localDisparos} getMsgTemplate={getMsgTemplate} abrirPreview={abrirPreview} enviarUm={enviarUm} onSaveState={onSaveState} isMobile={isMobile} sending={sending}/>
+      <ProspectsFilaPanel sessions={sessions} appState={appState} localDisparos={localDisparos} getMsgTemplate={getMsgTemplate} abrirPreview={abrirPreview} enviarUm={enviarUm} onSaveState={onSaveState} isMobile={isMobile} sending={sending}/>
             {zapiStatus==="err"&&(<div style={{background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:T.amber}}>⚠️ Configure em Config → Z-API</div>)}
       {Object.keys(appState.contatos).length===0&&(<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:T.mono,fontSize:11,color:"#60a5fa"}}>ℹ️ Importe o CSV de usuários em Config → Contatos.</div>)}
       {/* Seções CRM */}
@@ -4090,76 +4342,7 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
       </div>
 
       <SectionLabel>📊 Resultados das Campanhas</SectionLabel>
-      {(()=>{
-        const disparos=appState.disparos||[];
-        const enviados=disparos.filter(d=>d.status==="ok");
-        if(enviados.length===0)return(
-          <Panel style={{marginBottom:24}}><div style={{textAlign:"center" as const,padding:"20px",fontFamily:T.mono,fontSize:11,color:T.text3}}>Nenhum disparo registrado ainda</div></Panel>
-        );
-        // Cruzar disparos com sessões posteriores
-        const convertidos=enviados.filter(d=>{
-          const tsDisparo=new Date(d.ts).getTime();
-          return ok.some(s=>s.user===d.nome&&s.date.getTime()>tsDisparo);
-        });
-        // respostas são processadas via webhook — usar disparos como proxy
-        const responderam=enviados.filter(d=>ok.some(s=>s.user===d.nome)).length;
-        const taxaResposta=enviados.length>0?(responderam/enviados.length*100):0;
-        const taxaConversao=enviados.length>0?(convertidos.length/enviados.length*100):0;
-        // Tempo médio de retorno
-        const temposRetorno=convertidos.map(d=>{
-          const tsDisparo=new Date(d.ts).getTime();
-          const primeiraApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>tsDisparo).sort((a,b)=>a.date.getTime()-b.date.getTime())[0];
-          return primeiraApos?(primeiraApos.date.getTime()-tsDisparo)/86400000:null;
-        }).filter(Boolean) as number[];
-        const tempoMedio=temposRetorno.length>0?temposRetorno.reduce((a,b)=>a+b,0)/temposRetorno.length:0;
-        // Receita gerada pós-campanha
-        const receitaPos=convertidos.reduce((a,d)=>{
-          const tsDisparo=new Date(d.ts).getTime();
-          return a+ok.filter(s=>s.user===d.nome&&s.date.getTime()>tsDisparo).reduce((b,s)=>b+s.value,0);
-        },0);
-        return(
-          <>
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
-              {[
-                {label:"Enviados",val:`${enviados.length}`,sub:"total de disparos",cor:T.text},
-                {label:"Convertidos",val:`${convertidos.length}`,sub:`${taxaConversao.toFixed(0)}% voltaram a carregar`,cor:T.green},
-                {label:"Tempo Médio",val:tempoMedio>0?`${tempoMedio.toFixed(1)}d`:"—",sub:"dias até retornar",cor:T.amber},
-                {label:"Receita Gerada",val:brl(receitaPos),sub:"pós-campanha",cor:T.teal},
-              ].map((k,i)=>(
-                <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
-                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.cor}}/>
-                  <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.label}</div>
-                  <div style={{fontFamily:T.sans,fontSize:22,fontWeight:800,color:k.cor,marginBottom:4}}>{k.val}</div>
-                  <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{k.sub}</div>
-                </div>
-              ))}
-            </div>
-            {/* Top convertidos */}
-            {convertidos.length>0&&(
-              <Panel style={{marginBottom:24}}>
-                <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.text,marginBottom:12}}>✅ Usuários que retornaram após contato</div>
-                <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
-                  {convertidos.slice(0,5).map(d=>{
-                    const tsDisparo=new Date(d.ts).getTime();
-                    const sessApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>tsDisparo);
-                    const receitaU=sessApos.reduce((a,s)=>a+s.value,0);
-                    const diasRet=sessApos.length>0?Math.round((sessApos[0].date.getTime()-tsDisparo)/86400000):0;
-                    return(
-                      <div key={d.ts+d.nome} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg3,borderRadius:8,border:"1px solid rgba(0,229,160,0.15)"}}>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:500,color:T.text}}>{trunc(d.nome,isMobile?16:28)}</div>
-                          <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>retornou em {diasRet}d · {sessApos.length} sess</div>
-                        </div>
-                        <div style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:T.green}}>{brl(receitaU)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </Panel>
-            )}
-          </>
-        );
-      })()}
+            <CicloResultadosCRM sessions={sessions} appState={appState} isMobile={isMobile} ok={ok}/>
 
       {/* ── 2. MELHOR HORÁRIO DE DISPARO ─────────────────────────────────── */}
       <SectionLabel>⏰ Melhor Horário de Disparo</SectionLabel>
@@ -4304,6 +4487,7 @@ export default function Home() {
   const [appState, setAppState] = useState<AppState>(loadState);
   const [tab, setTab] = useState<Tab>("dash");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notifBg, setNotifBg] = useState<string|null>(null);
 
   const handleSave = useCallback((partial: Partial<AppState>) => {
     setAppState(prev => {
@@ -4461,7 +4645,62 @@ export default function Home() {
     return{semCadastroAlerta:semCadastro,prospectsContratuais:prospects};
   },[sessions,appState.baseMestre,appState.contatos]);
 
-  const handleNewSessions = useCallback(async (newSessions: Session[]) => {
+  // ── Polling webhook em background (processa respostas 1/2 sempre) ───────────
+  useEffect(()=>{
+    if(DEMO_MODE)return;
+    const processarRespostas=async()=>{
+      try{
+        const res=await sbFetch("webhook_respostas?processado=eq.false&order=criado_em.desc&limit=50");
+        if(!Array.isArray(res)||res.length===0)return;
+        const novosOverrides:Record<string,UserOverride>={};
+        const ids:string[]=[];
+        for(const r of res){
+          if(r.resposta!=="1"&&r.resposta!=="2")continue;
+          const tel=(r.telefone||"").replace(/\D/g,"");
+          const match=Object.values(appState.baseMestre).find(u=>{
+            const ut=(u.telefone||"").replace(/\D/g,"");
+            return ut===tel||ut.slice(-8)===tel.slice(-8);
+          });
+          if(!match)continue;
+          const key=match.nome.toLowerCase();
+          if(appState.userOverrides[key]?.respostaMsg1)continue; // já processado
+          novosOverrides[key]={
+            isMotorista:r.resposta==="1",
+            respostaMsg1:r.resposta as "1"|"2",
+            atualizadoEm:new Date().toISOString(),
+            fonte:"whatsapp"
+          };
+          ids.push(r.id);
+        }
+        if(ids.length>0){
+          // Marcar como processado no Supabase
+          for(const id of ids){
+            sbFetch(`webhook_respostas?id=eq.${id}`,{
+              method:"PATCH",
+              headers:{"Content-Type":"application/json","Prefer":"return=minimal"},
+              body:JSON.stringify({processado:true})
+            }).catch(()=>{});
+          }
+          // Salvar overrides localmente + Supabase
+          handleSave({userOverrides:{...appState.userOverrides,...novosOverrides}});
+          // Notificação visual
+          const motoristas=Object.values(novosOverrides).filter(v=>v.isMotorista===true).length;
+          const naoMotoristas=Object.values(novosOverrides).filter(v=>v.isMotorista===false).length;
+          const msgs=[];
+          if(motoristas>0) msgs.push(`🚗 ${motoristas} novo${motoristas>1?"s":""} motorista${motoristas>1?"s":""} identificado${motoristas>1?"s":""}`);
+          if(naoMotoristas>0) msgs.push(`✅ ${naoMotoristas} não-motorista${naoMotoristas>1?"s":""} confirmado${naoMotoristas>1?"s":""}`);
+          if(msgs.length>0) setNotifBg(msgs.join(" · "));
+          setTimeout(()=>setNotifBg(null),8000);
+          console.log(`✅ ${ids.length} respostas processadas em background`);
+        }
+      }catch(e){console.error("Background webhook poll:",e);}
+    };
+    processarRespostas();
+    const iv=setInterval(processarRespostas,90000); // a cada 90s
+    return()=>clearInterval(iv);
+  },[appState.baseMestre,appState.userOverrides]);
+
+    const handleNewSessions = useCallback(async (newSessions: Session[]) => {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     const unique = newSessions.filter(s=>!existingKeys.has(`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
     setSessions([...sessions,...unique]);
@@ -4508,6 +4747,12 @@ export default function Home() {
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
         @media (max-width: 767px) {
           body { font-size: 14px; }
+          table { font-size: 11px; }
+          button { min-height: 36px; }
+          input, select, textarea { font-size: 16px !important; }
+        }
+        @media (max-width: 480px) {
+          .hide-mobile { display: none !important; }
         }
       `}</style>
 
@@ -4609,6 +4854,12 @@ export default function Home() {
         )}
       </header>
 
+      {/* ── NOTIF BACKGROUND WEBHOOK ── */}
+      {notifBg&&(
+        <div style={{margin:"8px 16px 0",padding:"10px 16px",background:"rgba(0,230,118,0.1)",border:"1px solid rgba(0,230,118,0.3)",borderRadius:10,fontFamily:T.mono,fontSize:12,color:T.green,display:"flex",alignItems:"center",gap:8}}>
+          <span>⚡</span><span>{notifBg}</span>
+        </div>
+      )}
       {/* ── ALERTA USUÁRIOS SEM CADASTRO ── */}
       <main style={{flex:1}}>
       {semCadastroAlerta.length>0&&(
