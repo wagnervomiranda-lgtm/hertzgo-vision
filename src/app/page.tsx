@@ -2622,6 +2622,49 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
       })}
       {/* ── HISTÓRICO & REGISTROS (colapsável) ─────────────────────── */}
       <HistoricoRegistrosPanel T={T}>
+        <div style={{padding:"16px 16px 0"}}>
+          <SectionLabel>📋 Importar Histórico de Contatos</SectionLabel>
+          <Panel style={{marginBottom:16}}>
+            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:14,lineHeight:1.7}}>
+              Marque os usuários já contactados fora do sistema. Isso evita disparos duplicados.
+            </div>
+            <ImportarHistoricoPanel sessions={sessions} localDisparos={localDisparos} onSaveDisparos={onSaveDisparos} showToast={showToast} T={T} trunc={trunc} appState={appState}/>
+          </Panel>
+          <SectionLabel>✍️ Registrar Resposta Manual</SectionLabel>
+          <Panel style={{marginBottom:16}}>
+            <div style={{display:"flex",flexDirection:"column" as const,gap:10}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
+                <input type="text" placeholder="Nome do usuário" id="reg-nome"
+                  style={{flex:1,minWidth:120,background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+                <select id="reg-msg" style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}>
+                  <option value="msg1">🌱 Boas-vindas</option>
+                  <option value="msg2a">🚗 Convite Motorista</option>
+                  <option value="msg2b">⭐ Fidelização</option>
+                  <option value="msg_vip">👑 VIP</option>
+                  <option value="msg_risco">🔴 Reativação</option>
+                </select>
+                <input type="date" id="reg-data" defaultValue={new Date().toISOString().slice(0,10)}
+                  style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+              </div>
+              <input type="text" placeholder="Resposta recebida (opcional)"  id="reg-resp"
+                style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+              <button onClick={()=>{
+                const nome=(document.getElementById("reg-nome") as HTMLInputElement)?.value?.trim();
+                const msgId=(document.getElementById("reg-msg") as HTMLSelectElement)?.value;
+                const data=(document.getElementById("reg-data") as HTMLInputElement)?.value;
+                const resp=(document.getElementById("reg-resp") as HTMLInputElement)?.value?.trim();
+                if(!nome)return;
+                const novo={ts:new Date(data+"T12:00:00").toISOString(),nome,msgId,status:"ok" as const,msg:resp||"registrado manualmente"};
+                onSaveDisparos([novo,...localDisparos.slice(0,199)]);
+                showToast(`✅ Registrado: ${nome}`);
+                (document.getElementById("reg-nome") as HTMLInputElement).value="";
+                (document.getElementById("reg-resp") as HTMLInputElement).value="";
+              }} style={{padding:"8px 20px",borderRadius:8,border:"1px solid rgba(0,230,118,0.3)",background:"rgba(0,230,118,0.08)",color:T.green,fontFamily:T.mono,fontSize:12,fontWeight:700,cursor:"pointer",alignSelf:"flex-start" as const}}>
+                💾 Registrar
+              </button>
+            </div>
+          </Panel>
+        </div>
       </HistoricoRegistrosPanel>
       {localDisparos.length>0&&(<><SectionLabel>Histórico</SectionLabel><Panel style={{maxHeight:180,overflowY:"auto"}}>{localDisparos.slice(0,50).map((l,i)=>(<div key={i} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontFamily:T.mono,fontSize:10,flexWrap:"wrap"}}><span style={{color:T.text3}}>{new Date(l.ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span><span style={{color:l.status==="ok"?T.green:T.red}}>{l.status==="ok"?"✅":"❌"}</span><span style={{color:T.text}}>{trunc(l.nome,isMobile?16:24)}</span><span style={{color:T.text3,fontSize:9}}>{l.msgId}</span></div>))}</Panel></>)}
     </div>
