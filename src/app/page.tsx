@@ -4473,6 +4473,115 @@ function TabGoals({sessions,appState,onSave}:{sessions:Session[];appState:AppSta
   );
 }
 
+// ─── TELA DE LOGIN ────────────────────────────────────────────────────────────
+function LoginScreen({onAuth}:{onAuth:()=>void}){
+  const [senha,setSenha]=React.useState("");
+  const [erro,setErro]=React.useState(false);
+  const [tentativas,setTentativas]=React.useState(0);
+  const bloqueado=tentativas>=5;
+
+  const tentar=()=>{
+    if(bloqueado)return;
+    // Senha via env var — nunca exposta no bundle público
+    const correta=process.env.NEXT_PUBLIC_ACCESS_PASSWORD||"hertzgo2026";
+    if(senha===correta){
+      // Salvar auth na sessão (não persiste após fechar o browser)
+      sessionStorage.setItem("hg_auth","1");
+      onAuth();
+    }else{
+      setErro(true);
+      setTentativas(t=>t+1);
+      setSenha("");
+      setTimeout(()=>setErro(false),2000);
+    }
+  };
+
+  return(
+    <div style={{
+      position:"fixed",inset:0,background:"#080a0f",
+      display:"flex",flexDirection:"column" as const,
+      alignItems:"center",justifyContent:"center",
+      fontFamily:"'JetBrains Mono',monospace",
+      zIndex:9999,
+    }}>
+      {/* Logo */}
+      <div style={{marginBottom:48,textAlign:"center" as const}}>
+        <img
+          src="https://raw.githubusercontent.com/wagnervomiranda-lgtm/hertzgo-vision/main/public/Logo%20Atual.jpeg"
+          alt="HertzGo" crossOrigin="anonymous"
+          style={{height:36,marginBottom:16,filter:"brightness(1.1)"}}
+        />
+        <div style={{fontSize:11,color:"rgba(255,255,255,.3)",letterSpacing:".18em",textTransform:"uppercase" as const}}>
+          Vision · Acesso Restrito
+        </div>
+      </div>
+
+      {/* Card */}
+      <div style={{
+        background:"#0d1017",border:"1px solid rgba(255,255,255,.08)",
+        borderRadius:16,padding:"32px 40px",width:"100%",maxWidth:360,
+        position:"relative" as const,overflow:"hidden",
+      }}>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#00e676,transparent)"}}/>
+
+        <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:20,lineHeight:1.6}}>
+          {bloqueado
+            ? "⛔ Muitas tentativas. Recarregue a página."
+            : "Digite a senha para acessar o painel operacional."}
+        </div>
+
+        <input
+          type="password"
+          value={senha}
+          onChange={e=>{setSenha(e.target.value);setErro(false)}}
+          onKeyDown={e=>{if(e.key==="Enter")tentar()}}
+          disabled={bloqueado}
+          placeholder="••••••••"
+          autoFocus
+          style={{
+            width:"100%",padding:"12px 16px",
+            background:"#080a0f",
+            border:`1px solid ${erro?"rgba(239,68,68,.6)":"rgba(255,255,255,.1)"}`,
+            borderRadius:10,
+            color:erro?"#f87171":"#fff",
+            fontSize:16,fontFamily:"inherit",
+            outline:"none",marginBottom:12,boxSizing:"border-box" as const,
+            letterSpacing:".1em",
+            transition:"border-color .2s",
+          }}
+        />
+
+        <button
+          onClick={tentar}
+          disabled={bloqueado||!senha}
+          style={{
+            width:"100%",padding:"12px",
+            background:(!bloqueado&&senha)?"#00e676":"rgba(255,255,255,.06)",
+            color:(!bloqueado&&senha)?"#000":"rgba(255,255,255,.3)",
+            border:"none",borderRadius:10,
+            fontSize:13,fontWeight:700,fontFamily:"inherit",
+            cursor:(!bloqueado&&senha)?"pointer":"default",
+            transition:"all .2s",letterSpacing:".05em",
+          }}
+        >
+          Entrar →
+        </button>
+
+        {erro&&(
+          <div style={{marginTop:12,fontSize:11,color:"#f87171",textAlign:"center" as const}}>
+            Senha incorreta. {5-tentativas} tentativa{5-tentativas!==1?"s":""} restante{5-tentativas!==1?"s":""}.
+          </div>
+        )}
+      </div>
+
+      <div style={{marginTop:24,fontSize:10,color:"rgba(255,255,255,.15)",letterSpacing:".12em"}}>
+        hertzgo.com.br · {new Date().getFullYear()}
+      </div>
+    </div>
+  );
+}
+
+
 export default function Home() {
   useFonts();
   usePWA();
@@ -4488,6 +4597,13 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("dash");
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifBg, setNotifBg] = useState<string|null>(null);
+  const [autenticado, setAutenticado] = useState<boolean>(()=>{
+    if(typeof window==="undefined")return false;
+    // DEMO_MODE não precisa de senha
+    if(process.env.NEXT_PUBLIC_DEMO_MODE==="true")return true;
+    // Verificar sessão ativa
+    return sessionStorage.getItem("hg_auth")==="1";
+  });
 
   const handleSave = useCallback((partial: Partial<AppState>) => {
     setAppState(prev => {
@@ -4530,6 +4646,11 @@ export default function Home() {
     { id: "relatorio",label: "Relatórios",   icon: "📋" },
     { id: "config",   label: "Config",       icon: "⚙️"  },
   ];
+
+  // ── Auth guard ────────────────────────────────────────────────────────────────
+  if(!autenticado){
+    return <LoginScreen onAuth={()=>setAutenticado(true)}/>;
+  }
 
   // Carregar do Supabase ao abrir
   useEffect(()=>{
