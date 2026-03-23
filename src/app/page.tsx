@@ -181,7 +181,7 @@ const MSG_DEFAULT: Mensagens = {
   msg1: "Olá [nome]! Sou o Wagner, da HertzGo ⚡\n\nVi que você carregou no [local] — obrigado!\n\nVocê é motorista de app? Responde 1 pra SIM ou 2 pra NÃO 🚗",
   msg2a_parkway: "Perfeito [nome]! 🎉\n\nVocê agora faz parte de um grupo seleto que acompanho pessoalmente.\n\nSeu preço fixo no Park Way: R$ [preco]/kWh — já no app, sem cupom.\n\nDC 80kW, sem fila. Pode vir! ⚡",
   msg2a_cidadeauto: "Perfeito [nome]! 🎉\n\nSeu preço fixo na Cidade do Automóvel: R$ [preco]/kWh — já no app.\n\nQuer o endereço?",
-  msg2a_vip_parkway: "Ei [nome], você é VIP no Park Way! 🏆\n\nComo reconhecimento: [beneficio]\n\nSeu preço exclusivo: R$ [preco]/kWh — já cadastrado, sem precisar de cupom.",
+  msg2a_vip_parkway: "Ei [nome], você é top [ranking]° da nossa rede! 🏆\n\nVocê está conosco há [dias_cliente] dias e já carregou [sessoes] vezes.\n\nComo reconhecimento: preço fixo R$ [preco]/kWh no Park Way — já no app, sem cupom. ⚡",
   msg2a_vip_cidadeauto: "Ei [nome], você é VIP na Cidade do Automóvel! 🏆\n\nSeu preço exclusivo: R$ [preco]/kWh — já no app.",
   msg2b_costa: "[nome], obrigado por ser cliente do Costa Atacadão! 😊\n\nSeu preço especial: R$ [preco]/kWh — já cadastrado no seu perfil. Sem cupom, sem complicação. ⚡",
   msg2b_parkway: "[nome], você já é cliente frequente no Park Way! 🙏\n\nSeu preço fixo: R$ [preco]/kWh — já no app.",
@@ -2494,12 +2494,27 @@ function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Sessi
   const montarMsg=(template:string,nome:string,hubK:string,cupom:string="",precoVip?:number)=>{
     const ov=appState.userOverrides[nome.toLowerCase()];
     const preco=precoVip??ov?.precoVip??1.29;
+    // Variáveis dinâmicas calculadas
+    const userSess=ok.filter(s=>s.user===nome&&!s.cancelled&&s.value>0);
+    const totalGasto=userSess.reduce((a,s)=>a+s.value,0);
+    const primeiraRecarga=userSess.length>0?new Date(Math.min(...userSess.map(s=>s.date.getTime()))):null;
+    const diasCliente=primeiraRecarga?Math.round((Date.now()-primeiraRecarga.getTime())/86400000):0;
+    const maiorGasto=Math.max(0,...userSess.map(s=>s.value));
+    // Ranking entre todos os usuários
+    const todosGastos=classificarUsuarios(ok).map(u=>u.kwh*1.3).sort((a,b)=>b-a);
+    const ranking=todosGastos.findIndex(v=>v<=totalGasto)+1||"—";
     return template
       .replace(/\[nome\]/gi,nome.split(" ")[0])
       .replace(/\[local\]/gi,hubNome(hubK))
       .replace(/\[cupom\]/gi,cupom)
       .replace(/\[preco\]/gi,preco.toFixed(2).replace(".",","))
-      .replace(/\[beneficio\]/gi,"prioridade e preço exclusivo");
+      .replace(/\[beneficio\]/gi,"prioridade e preço exclusivo")
+      .replace(/\[ranking\]/gi,String(ranking))
+      .replace(/\[dias_cliente\]/gi,String(diasCliente))
+      .replace(/\[maior_gasto\]/gi,`R$\u00a0${maiorGasto.toFixed(0)}`)
+      .replace(/\[total_gasto\]/gi,`R$\u00a0${totalGasto.toFixed(0)}`)
+      .replace(/\[sessoes\]/gi,String(userSess.length))
+      .replace(/\[primeiro_nome\]/gi,nome.split(" ")[0]);
   };
   const abrirPreview=(user:string,hubK:string,msgId:string,template:string,cupom:string="")=>{const tel=getTel(user)||"";const ov2=appState.userOverrides[user.toLowerCase()];const msg=montarMsg(template,user,hubK,cupom,ov2?.precoVip);setPreview({user,hubK,msgId,template,cupom,tel,msg});};
   const enviarUm=async(user:string,hubK:string,msgId:string,template:string,cupom:string="")=>{
@@ -3020,7 +3035,11 @@ function TabConfig({appState,onSave}:{appState:AppState;onSave:(partial:Partial<
       {activeSection==="mensagens"&&(
         <>
           <div style={{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,padding:"10px 14px",fontFamily:T.mono,fontSize:11,color:"#fcd34d",marginBottom:16}}>ℹ️ Use [nome], [local], [cupom] e [beneficio].</div>
-          {msgFields.map(([key,label])=>(<div key={key} style={{marginBottom:14}}><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:5}}>{label}</div><textarea value={msgs[key]} onChange={e=>setMsgs(p=>({...p,[key]:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"10px 12px",borderRadius:10,fontSize:12,fontFamily:T.mono,resize:"vertical",minHeight:key.startsWith("cupom")?38:76,lineHeight:1.6,boxSizing:"border-box"}}/></div>))}
+          {msgFields.map(([key,label])=>(<div key={key} style={{marginBottom:14}}><div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginBottom:5}}>{label}</div>
+              {!key.startsWith("cupom")&&<div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:6,lineHeight:1.6}}>
+                Variáveis: <span style={{color:T.teal}}>[nome]</span> · <span style={{color:T.teal}}>[local]</span> · <span style={{color:T.teal}}>[preco]</span> · <span style={{color:T.teal}}>[cupom]</span> · <span style={{color:T.teal}}>[ranking]</span> · <span style={{color:T.teal}}>[dias_cliente]</span> · <span style={{color:T.teal}}>[sessoes]</span> · <span style={{color:T.teal}}>[total_gasto]</span>
+              </div>}
+              <textarea value={msgs[key]} onChange={e=>setMsgs(p=>({...p,[key]:e.target.value}))} style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"10px 12px",borderRadius:10,fontSize:12,fontFamily:T.mono,resize:"vertical",minHeight:key.startsWith("cupom")?38:76,lineHeight:1.6,boxSizing:"border-box"}}/></div>))}
           <button onClick={()=>{onSave({mensagens:msgs});setMsgSaved(true);setTimeout(()=>setMsgSaved(false),2000);}} style={{background:msgSaved?"rgba(0,229,160,0.2)":T.greenDim,border:`1px solid ${msgSaved?T.green:"rgba(0,229,160,0.3)"}`,color:T.green,padding:"10px 20px",borderRadius:8,fontSize:13,cursor:"pointer",fontFamily:T.mono,width:"100%"}}>{msgSaved?"✅ Salvas!":"💾 Salvar Mensagens"}</button>
         </>
       )}
@@ -4311,6 +4330,7 @@ export default function Home() {
       if(partial.mensagens) sbSaveConfig("mensagens",{...MSG_DEFAULT,...prev.mensagens,...partial.mensagens}).catch(()=>{});
       if(partial.cupons) sbSaveConfig("cupons",partial.cupons).catch(()=>{});
       if(partial.limiteDisparoDiario!==undefined) sbSaveConfig("limiteDisparoDiario",partial.limiteDisparoDiario).catch(()=>{});
+      if(partial.userOverrides) sbSaveConfig("userOverrides",{...prev.userOverrides,...partial.userOverrides}).catch(()=>{});
       return next;
     });
   }, []);
@@ -4353,6 +4373,7 @@ export default function Home() {
           if(sbConfigs.mensagens) next={...next,mensagens:{...MSG_DEFAULT,...sbConfigs.mensagens as AppState["mensagens"]}};
           if(sbConfigs.cupons) next={...next,cupons:sbConfigs.cupons as AppState["cupons"]};
           if(sbConfigs.limiteDisparoDiario) next={...next,limiteDisparoDiario:sbConfigs.limiteDisparoDiario as number};
+          if(sbConfigs.userOverrides) next={...next,userOverrides:{...next.userOverrides,...sbConfigs.userOverrides as AppState["userOverrides"]}};
           saveState(next);
           return next;
         });
@@ -4417,20 +4438,28 @@ export default function Home() {
     return sessions.filter(s => s.date.getTime() >= cortes[periodoFiltro]);
   },[sessions, periodoFiltro]);
 
-  // Usuários sem cadastro na Base Mestre
-  const semCadastroAlerta = useMemo(()=>{
-    const nomes = Array.from(new Set(sessions.map(s=>s.user)));
-    const contatosTodos = Object.values(appState.contatos).flatMap(c => c.dados);
-    return nomes.filter(nome=>{
-      const key = nome.toLowerCase();
-      const bm = appState.baseMestre[key];
-      if(bm?.temTel) return false;
-      const noContatos = contatosTodos.some(d =>
-        d.telefone && (d.nome.toLowerCase().includes(key) || key.includes(d.nome.toLowerCase().trim()))
-      );
-      return !noContatos;
+  // Estações contratuais
+  const ESTACOES_CONTRATUAIS_KEYS=["madeiro_sia","madeiro_sp","mamute"];
+  // Usuários sem cadastro vs prospects contratuais
+  const {semCadastroAlerta,prospectsContratuais}=useMemo(()=>{
+    const nomes=Array.from(new Set(sessions.map(s=>s.user)));
+    const contatosTodos=Object.values(appState.contatos).flatMap(c=>c.dados);
+    const estacaoPrincipal:Record<string,string>={};
+    sessions.forEach(s=>{if(!estacaoPrincipal[s.user.toLowerCase()])estacaoPrincipal[s.user.toLowerCase()]=s.hubKey;});
+    const semCadastro:string[]=[];
+    const prospects:string[]=[];
+    nomes.forEach(nome=>{
+      const key=nome.toLowerCase();
+      const bm=appState.baseMestre[key];
+      if(bm?.temTel)return;
+      const noContatos=contatosTodos.some(d=>d.telefone&&(d.nome.toLowerCase().includes(key)||key.includes(d.nome.toLowerCase().trim())));
+      if(noContatos)return;
+      const estacao=estacaoPrincipal[key]||"";
+      if(ESTACOES_CONTRATUAIS_KEYS.some(e=>estacao.includes(e))){prospects.push(nome);}
+      else{semCadastro.push(nome);}
     });
-  },[sessions, appState.baseMestre, appState.contatos]);
+    return{semCadastroAlerta:semCadastro,prospectsContratuais:prospects};
+  },[sessions,appState.baseMestre,appState.contatos]);
 
   const handleNewSessions = useCallback(async (newSessions: Session[]) => {
     const existingKeys = new Set(sessions.map(s=>`${s.user}_${s.date.toISOString().slice(0,10)}_${s.value}_${s.energy}`));
@@ -4582,50 +4611,37 @@ export default function Home() {
 
       {/* ── ALERTA USUÁRIOS SEM CADASTRO ── */}
       {semCadastroAlerta.length>0&&(
-        <div style={{
-          margin:"0 16px 0",padding:"10px 16px",
-          background:"rgba(255,171,0,0.08)",border:"1px solid rgba(255,171,0,0.25)",
-          borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",
-          gap:12,flexWrap:"wrap" as const,
-        }}>
+        <div style={{margin:"0 16px 0",padding:"10px 16px",background:"rgba(255,171,0,0.08)",border:"1px solid rgba(255,171,0,0.25)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" as const}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:16}}>📋</span>
+            <span style={{fontSize:16}}>⚠️</span>
             <div>
-              <span style={{fontFamily:T.sans,fontSize:13,fontWeight:700,color:"#ffd54f"}}>
-                {semCadastroAlerta.length} usuário{semCadastroAlerta.length>1?"s":""} sem cadastro detectado{semCadastroAlerta.length>1?"s":""}
-              </span>
-              <div style={{fontFamily:T.mono,fontSize:10,color:"#ffcc02",marginTop:2}}>
+              <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:"#FFAB00"}}>
+                {semCadastroAlerta.length} usuário{semCadastroAlerta.length>1?"s":""} sem telefone cadastrado
+              </div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginTop:2}}>
                 {semCadastroAlerta.slice(0,3).join(" · ")}{semCadastroAlerta.length>3?` +${semCadastroAlerta.length-3} outros`:""}
               </div>
             </div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <span style={{fontFamily:T.mono,fontSize:10,color:"#ffab00"}}>
-              Exporte a Base Mestre da Spott e importe em Config → Contatos
-            </span>
-
-          </div>
+          <div style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>Importe a Base Mestre atualizada em Config → Contatos</div>
         </div>
       )}
-
-      {/* ── CONTEÚDO DAS ABAS ── */}
-      <main style={{ paddingBottom: isMobile ? 80 : 40 }}>
-        {tab === "dash"      && <TabDashboard sessions={sessionsFiltradas} meta={meta} onMetaChange={onMetaChange} appState={appState} onIrParaAcoes={()=>setTab("acoes")} />}
-        {tab === "dre"       && <TabDRE sessions={sessionsFiltradas} appState={appState} />}
-        {tab === "acoes" && !DEMO_MODE && <TabAcoes sessions={sessionsFiltradas} appState={appState} onSaveDisparos={d => handleSave({ disparos: d })} onSaveState={handleSave} />}
-        {tab === "acoes" && DEMO_MODE && (
-          <div style={{padding:"60px 28px",textAlign:"center" as const,maxWidth:480,margin:"0 auto"}}>
-            <div style={{fontSize:48,marginBottom:16}}>🔒</div>
-            <div style={{fontFamily:T.sans,fontSize:20,fontWeight:800,color:T.text,marginBottom:8}}>Módulo CRM</div>
-            <div style={{fontFamily:T.mono,fontSize:12,color:T.text2,marginBottom:8,lineHeight:1.7}}>
-              Fila do Dia inteligente, disparo automático com intervalo humanizado, segmentação por LTV, identificação de motoristas via WhatsApp e muito mais.
+      {prospectsContratuais.length>0&&(
+        <div style={{margin:"8px 16px 0",padding:"10px 16px",background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.25)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap" as const}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:16}}>🎯</span>
+            <div>
+              <div style={{fontFamily:T.sans,fontSize:12,fontWeight:600,color:"#60A5FA"}}>
+                {prospectsContratuais.length} prospect{prospectsContratuais.length>1?"s":""} para converter — Madeiro/Mamute
+              </div>
+              <div style={{fontFamily:T.mono,fontSize:10,color:T.text2,marginTop:2}}>
+                {prospectsContratuais.slice(0,3).join(" · ")}{prospectsContratuais.length>3?` +${prospectsContratuais.length-3} outros`:""}
+              </div>
             </div>
-            <div style={{fontFamily:T.mono,fontSize:11,color:T.text3,marginBottom:28}}>Disponível na versão completa.</div>
-            <a href="https://wa.me/5561998037361?text=Quero+saber+mais+sobre+o+HertzGo+Vision" target="_blank" rel="noopener noreferrer" style={{display:"inline-block",padding:"14px 32px",borderRadius:12,background:T.green,color:T.bg,fontFamily:T.sans,fontSize:14,fontWeight:700,textDecoration:"none"}}>
-              💬 Quero o Vision completo
-            </a>
           </div>
-        )}
+          <div style={{fontFamily:T.mono,fontSize:10,color:"#60A5FA"}}>Ver fila 🚗 Convite Motorista em Ações</div>
+        </div>
+      )}
         {tab === "relatorio" && <TabRelatorio sessions={sessionsFiltradas} appState={appState} onAddSessions={handleNewSessions} />}
         {tab === "config"    && !DEMO_MODE && <TabConfig appState={appState} onSave={handleSave} />}
         {tab === "config"    && DEMO_MODE && (
