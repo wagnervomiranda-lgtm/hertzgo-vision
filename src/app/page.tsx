@@ -982,9 +982,9 @@ function ProjecaoMensal({sessions,meta,onMetaChange}:{sessions:Session[];meta:nu
   const metaColor=pctMeta>=100?T.green:pctMeta>=75?T.amber:T.red;
   const gerarInsight=():string=>{
     if(meta===0)return"Configure uma meta mensal para ativar o pacing inteligente.";
-    if(pctMeta>=110)return`🚀 Projeção ${pctMeta.toFixed(0)}% da meta. Vai superar em R$ ${(projRev-meta).toFixed(0)}.`;
+    if(pctMeta>=110)return`🚀 Projeção ${pctMeta.toFixed(0)}% da meta. Vai superar em R$ ${(projRev-meta).toFixed(0)}.`;
     if(pctMeta>=100)return`✅ No alvo — mantenha ${avgSessDay.toFixed(1)} sessões/dia.`;
-    if(pctMeta>=75){if(ritmoDiff>0)return`⚠️ Precisa de R$ ${ritmoNecessario.toFixed(0)}/dia nos próximos ${diasRestantes} dias.`;return`⚠️ Projeção em ${pctMeta.toFixed(0)}%. Faltam R$ ${faltaMeta.toFixed(0)} — ${diasRestantes} dias.`;}
+    if(pctMeta>=75){if(ritmoDiff>0)return`⚠️ Precisa de R$ ${ritmoNecessario.toFixed(0)}/dia nos próximos ${diasRestantes} dias.`;return`⚠️ Projeção em ${pctMeta.toFixed(0)}%. Faltam R$ ${faltaMeta.toFixed(0)} — ${diasRestantes} dias.`;}
     return`🔴 Ritmo crítico — ${pctMeta.toFixed(0)}% da meta.`;
   };
     return(
