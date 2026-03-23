@@ -440,7 +440,7 @@ async function sbLoadDisparos():Promise<{ts:string;nome:string;msgId:string;stat
     ts:r.criado_em as string,
     nome:r.nome as string,
     msgId:r.msg_id as string,
-    status:r.status as string,
+    status:(r.status==="err"?"err":"ok") as "ok"|"err",
     msg:(r.msg as string)||undefined,
   }));
 }
