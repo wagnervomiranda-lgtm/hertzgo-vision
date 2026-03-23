@@ -400,6 +400,17 @@ function parseSpott(text: string): Session[] {
   if (!sessions.length) throw new Error("Nenhuma sessão encontrada");
   return sessions;
 }
+
+async function sbSaveContatoManual(r:{nome:string;msg_id:string;preco?:number|null;cupom?:string;data_contato:string;resposta?:string}):Promise<boolean>{
+  if(!SB_URL)return false;
+  try{const res=await fetch(`${SB_URL}/rest/v1/contatos_manuais`,{method:"POST",headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":"application/json","Prefer":"return=minimal"},body:JSON.stringify(r)});return res.ok;}
+  catch(e){console.error("sbSaveContatoManual:",e);return false;}
+}
+async function sbLoadContatosManuais():Promise<{id:string;nome:string;msg_id:string;preco:number|null;cupom:string;data_contato:string;resposta:string}[]>{
+  const data=await sbFetch("contatos_manuais?select=*&order=data_contato.desc&limit=500");
+  return Array.isArray(data)?data:[];
+}
+
 async function parseMove(file: File): Promise<{sessions:Session[];contatos:{nome:string;telefone:string}[]}> {
   const XLSX = await import("xlsx");
   const buf = await file.arrayBuffer();
@@ -2183,6 +2194,141 @@ function HistoricoRegistrosPanel({children,T}:{children:React.ReactNode;T:Record
 }
 
 
+// ─── REGISTROS MANUAIS DE CONTATOS ───────────────────────────────────────────
+function RegistrosManuaisPanel({sessions,appState,showToast,T,trunc}:{
+  sessions:Session[];appState:AppState;showToast:(m:string)=>void;T:Record<string,string>;trunc:(s:string,n:number)=>string;
+}){
+  const[busca,setBusca]=useState("");
+  const[sel,setSel]=useState("");
+  const[msgId,setMsgId]=useState("msg1");
+  const[preco,setPreco]=useState("");
+  const[cupom,setCupom]=useState("");
+  const[data,setData]=useState(new Date().toISOString().slice(0,10));
+  const[resposta,setResposta]=useState("");
+  const[salvando,setSalvando]=useState(false);
+  const[registros,setRegistros]=useState<{id:string;nome:string;msg_id:string;preco:number|null;cupom:string;data_contato:string;resposta:string}[]>([]);
+  const[loadingReg,setLoadingReg]=useState(true);
+
+  useEffect(()=>{sbLoadContatosManuais().then(r=>{setRegistros(r);setLoadingReg(false);});},[]);
+
+  const todoUsers=useMemo(()=>{
+    const s=Array.from(new Set(sessions.map(u=>u.user)));
+    const bm=Object.values(appState.baseMestre).map(u=>u.nome);
+    return Array.from(new Set([...s,...bm])).sort();
+  },[sessions,appState.baseMestre]);
+
+  const filtrados=todoUsers.filter(n=>!busca||n.toLowerCase().includes(busca.toLowerCase())).slice(0,40);
+
+  const msgs=[
+    {id:"msg1",label:"🌱 Boas-vindas & Qualificação"},
+    {id:"msg2a",label:"🚗 Convite Motorista — Park Way"},
+    {id:"msg2b",label:"⭐ Fidelização"},
+    {id:"msg_vip",label:"👑 Reconhecimento VIP"},
+    {id:"msg_risco",label:"🔴 Reativação — Sumiu"},
+    {id:"msg_churn",label:"💔 Última Tentativa"},
+  ];
+
+  const salvar=async()=>{
+    if(!sel){showToast("⚠️ Selecione um usuário");return;}
+    setSalvando(true);
+    const ok=await sbSaveContatoManual({
+      nome:sel,msg_id:msgId,
+      preco:preco?parseFloat(preco.replace(",",".")):null,
+      cupom:cupom||undefined,
+      data_contato:data,
+      resposta:resposta||undefined,
+    });
+    if(ok){
+      showToast(`✅ Registrado: ${sel}`);
+      setRegistros(r=>[{id:Date.now().toString(),nome:sel,msg_id:msgId,preco:preco?parseFloat(preco):null,cupom,data_contato:data,resposta},...r]);
+      setSel("");setBusca("");setPreco("");setCupom("");setResposta("");
+    }else{showToast("❌ Erro ao salvar — verifique o Supabase");}
+    setSalvando(false);
+  };
+
+  const msgLabel=(id:string)=>msgs.find(m=>m.id===id)?.label||id;
+
+  return(
+    <div>
+      <div style={{display:"flex",flexDirection:"column" as const,gap:10,marginBottom:20}}>
+        <div>
+          <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginBottom:4}}>Usuário *</div>
+          <input type="text" placeholder="Buscar nome..." value={busca} onChange={e=>{setBusca(e.target.value);setSel("");}}
+            style={{width:"100%",background:T.bg3,border:`1px solid ${sel?T.green:T.border}`,color:T.text,padding:"8px 12px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+          {busca&&!sel&&filtrados.length>0&&(
+            <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:"0 0 8px 8px",maxHeight:130,overflowY:"auto" as const}}>
+              {filtrados.map(n=>(
+                <div key={n} onClick={()=>{setSel(n);setBusca(n);}}
+                  style={{padding:"7px 12px",fontFamily:T.mono,fontSize:11,color:T.text,cursor:"pointer",borderBottom:`1px solid ${T.border}`}}>
+                  {trunc(n,36)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
+          <div style={{flex:2,minWidth:160}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginBottom:4}}>Mensagem enviada *</div>
+            <select value={msgId} onChange={e=>setMsgId(e.target.value)}
+              style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:11}}>
+              {msgs.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </div>
+          <div style={{flex:1,minWidth:130}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginBottom:4}}>Data do contato</div>
+            <input type="date" value={data} onChange={e=>setData(e.target.value)}
+              style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
+          <div style={{flex:1,minWidth:120}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginBottom:4}}>Preço proposto (R$/kWh)</div>
+            <input type="text" placeholder="Ex: 1,05" value={preco} onChange={e=>setPreco(e.target.value)}
+              style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+          </div>
+          <div style={{flex:1,minWidth:120}}>
+            <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginBottom:4}}>Cupom proposto</div>
+            <input type="text" placeholder="Ex: PWVIP10" value={cupom} onChange={e=>setCupom(e.target.value.toUpperCase())}
+              style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+          </div>
+        </div>
+        <div>
+          <div style={{fontFamily:T.mono,fontSize:10,color:T.text3,marginBottom:4}}>Resposta recebida (opcional)</div>
+          <input type="text" placeholder="Ex: respondeu 1, disse que é motorista..." value={resposta} onChange={e=>setResposta(e.target.value)}
+            style={{width:"100%",background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
+        </div>
+        <button onClick={salvar} disabled={salvando||!sel} style={{
+          padding:"10px 24px",borderRadius:8,fontFamily:T.mono,fontSize:12,fontWeight:700,
+          border:`1px solid ${sel?"rgba(0,230,118,0.4)":T.border}`,
+          background:sel?"rgba(0,230,118,0.1)":T.bg3,
+          color:sel?T.green:T.text3,cursor:sel?"pointer":"not-allowed",alignSelf:"flex-start" as const}}>
+          {salvando?"⏳ Salvando...":"💾 Registrar no Supabase"}
+        </button>
+      </div>
+      {loadingReg?(
+        <div style={{fontFamily:T.mono,fontSize:11,color:T.text3}}>Carregando histórico...</div>
+      ):registros.length>0&&(
+        <div>
+          <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,letterSpacing:"0.1em",textTransform:"uppercase" as const,marginBottom:8}}>Últimos registros — {registros.length}</div>
+          <div style={{maxHeight:200,overflowY:"auto" as const,display:"flex",flexDirection:"column" as const,gap:4}}>
+            {registros.slice(0,30).map((r,i)=>(
+              <div key={i} style={{display:"flex",gap:8,padding:"7px 10px",background:T.bg3,borderRadius:8,alignItems:"center",flexWrap:"wrap" as const}}>
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text,flex:1,minWidth:120}}>{trunc(r.nome,20)}</span>
+                <span style={{fontFamily:T.mono,fontSize:9,color:T.text2}}>{msgLabel(r.msg_id)}</span>
+                {r.preco&&<span style={{fontFamily:T.mono,fontSize:9,color:T.green}}>R${Number(r.preco).toFixed(2)}</span>}
+                {r.cupom&&<span style={{fontFamily:T.mono,fontSize:9,color:T.amber}}>{r.cupom}</span>}
+                <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{new Date(r.data_contato+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}</span>
+                {r.resposta&&<span style={{fontFamily:T.mono,fontSize:9,color:T.teal,maxWidth:140,overflow:"hidden" as const,textOverflow:"ellipsis" as const,whiteSpace:"nowrap" as const}} title={r.resposta}>💬 {r.resposta}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void;onSaveState:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
@@ -2622,48 +2768,8 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
       })}
       {/* ── HISTÓRICO & REGISTROS (colapsável) ─────────────────────── */}
       <HistoricoRegistrosPanel T={T}>
-        <div style={{padding:"16px 16px 0"}}>
-          <SectionLabel>📋 Importar Histórico de Contatos</SectionLabel>
-          <Panel style={{marginBottom:16}}>
-            <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:14,lineHeight:1.7}}>
-              Marque os usuários já contactados fora do sistema. Isso evita disparos duplicados.
-            </div>
-            <ImportarHistoricoPanel sessions={sessions} localDisparos={localDisparos} onSaveDisparos={onSaveDisparos} showToast={showToast} T={T} trunc={trunc} appState={appState}/>
-          </Panel>
-          <SectionLabel>✍️ Registrar Resposta Manual</SectionLabel>
-          <Panel style={{marginBottom:16}}>
-            <div style={{display:"flex",flexDirection:"column" as const,gap:10}}>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
-                <input type="text" placeholder="Nome do usuário" id="reg-nome"
-                  style={{flex:1,minWidth:120,background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
-                <select id="reg-msg" style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}>
-                  <option value="msg1">🌱 Boas-vindas</option>
-                  <option value="msg2a">🚗 Convite Motorista</option>
-                  <option value="msg2b">⭐ Fidelização</option>
-                  <option value="msg_vip">👑 VIP</option>
-                  <option value="msg_risco">🔴 Reativação</option>
-                </select>
-                <input type="date" id="reg-data" defaultValue={new Date().toISOString().slice(0,10)}
-                  style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
-              </div>
-              <input type="text" placeholder="Resposta recebida (opcional)"  id="reg-resp"
-                style={{background:T.bg3,border:`1px solid ${T.border}`,color:T.text,padding:"8px 10px",borderRadius:8,fontFamily:T.mono,fontSize:12}}/>
-              <button onClick={()=>{
-                const nome=(document.getElementById("reg-nome") as HTMLInputElement)?.value?.trim();
-                const msgId=(document.getElementById("reg-msg") as HTMLSelectElement)?.value;
-                const data=(document.getElementById("reg-data") as HTMLInputElement)?.value;
-                const resp=(document.getElementById("reg-resp") as HTMLInputElement)?.value?.trim();
-                if(!nome)return;
-                const novo={ts:new Date(data+"T12:00:00").toISOString(),nome,msgId,status:"ok" as const,msg:resp||"registrado manualmente"};
-                onSaveDisparos([novo,...localDisparos.slice(0,199)]);
-                showToast(`✅ Registrado: ${nome}`);
-                (document.getElementById("reg-nome") as HTMLInputElement).value="";
-                (document.getElementById("reg-resp") as HTMLInputElement).value="";
-              }} style={{padding:"8px 20px",borderRadius:8,border:"1px solid rgba(0,230,118,0.3)",background:"rgba(0,230,118,0.08)",color:T.green,fontFamily:T.mono,fontSize:12,fontWeight:700,cursor:"pointer",alignSelf:"flex-start" as const}}>
-                💾 Registrar
-              </button>
-            </div>
-          </Panel>
+        <div style={{padding:"16px"}}>
+          <RegistrosManuaisPanel sessions={sessions} appState={appState} showToast={showToast} T={T} trunc={trunc}/>
         </div>
       </HistoricoRegistrosPanel>
       {localDisparos.length>0&&(<><SectionLabel>Histórico</SectionLabel><Panel style={{maxHeight:180,overflowY:"auto"}}>{localDisparos.slice(0,50).map((l,i)=>(<div key={i} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontFamily:T.mono,fontSize:10,flexWrap:"wrap"}}><span style={{color:T.text3}}>{new Date(l.ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span><span style={{color:l.status==="ok"?T.green:T.red}}>{l.status==="ok"?"✅":"❌"}</span><span style={{color:T.text}}>{trunc(l.nome,isMobile?16:24)}</span><span style={{color:T.text3,fontSize:9}}>{l.msgId}</span></div>))}</Panel></>)}
