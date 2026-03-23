@@ -411,6 +411,61 @@ async function sbLoadContatosManuais():Promise<{id:string;nome:string;msg_id:str
   return Array.isArray(data)?data:[];
 }
 
+// ─── SUPABASE: DISPAROS ───────────────────────────────────────────────────────
+async function sbSaveDisparos(disparos:{ts:string;nome:string;msgId:string;status:string;msg?:string}[]):Promise<void>{
+  if(!SB_URL||!disparos.length)return;
+  const rows=disparos.map(d=>({
+    criado_em:d.ts,nome:d.nome,msg_id:d.msgId,
+    status:d.status,msg:d.msg||null,
+  }));
+  // Salva em lotes de 100
+  for(let i=0;i<rows.length;i+=100){
+    const batch=rows.slice(i,i+100);
+    try{
+      await fetch(`${SB_URL}/rest/v1/disparos`,{
+        method:"POST",
+        headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":"application/json","Prefer":"resolution=ignore-duplicates,return=minimal"},
+        body:JSON.stringify(batch),
+      });
+    }catch(e){console.error("sbSaveDisparos:",e);}
+  }
+}
+
+async function sbLoadDisparos():Promise<{ts:string;nome:string;msgId:string;status:string;msg?:string}[]>{
+  // Busca últimos 90 dias
+  const desde=new Date(Date.now()-90*86400000).toISOString();
+  const data=await sbFetch(`disparos?select=*&criado_em=gte.${desde}&order=criado_em.desc&limit=5000`);
+  if(!Array.isArray(data))return[];
+  return data.map((r:Record<string,unknown>)=>({
+    ts:r.criado_em as string,
+    nome:r.nome as string,
+    msgId:r.msg_id as string,
+    status:r.status as string,
+    msg:(r.msg as string)||undefined,
+  }));
+}
+
+// ─── SUPABASE: CONFIGS ────────────────────────────────────────────────────────
+async function sbSaveConfig(chave:string,valor:unknown):Promise<void>{
+  if(!SB_URL)return;
+  try{
+    await fetch(`${SB_URL}/rest/v1/configs`,{
+      method:"POST",
+      headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({chave,valor,atualizado_em:new Date().toISOString()}),
+    });
+  }catch(e){console.error("sbSaveConfig:",e);}
+}
+
+async function sbLoadConfigs():Promise<Record<string,unknown>>{
+  const data=await sbFetch("configs?select=chave,valor");
+  if(!Array.isArray(data))return{};
+  const result:Record<string,unknown>={};
+  data.forEach((r:Record<string,unknown>)=>{result[r.chave as string]=r.valor;});
+  return result;
+}
+
+
 async function parseMove(file: File): Promise<{sessions:Session[];contatos:{nome:string;telefone:string}[]}> {
   const XLSX = await import("xlsx");
   const buf = await file.arrayBuffer();
@@ -4245,6 +4300,17 @@ export default function Home() {
       if (partial.operadoresIgnorar !== undefined) next.operadoresIgnorar = partial.operadoresIgnorar;
       if (partial.disparosManuaisHoje !== undefined) next.disparosManuaisHoje = partial.disparosManuaisHoje;
       saveState(next);
+      // Sync Supabase — disparos novos
+      if(partial.disparos){
+        const novos=partial.disparos.filter(d=>!prev.disparos.some(p=>p.ts===d.ts));
+        if(novos.length>0) sbSaveDisparos(novos).catch(e=>console.error("SB disparos:",e));
+      }
+      // Sync Supabase — configs críticas
+      if(partial.metas) sbSaveConfig("metas",partial.metas).catch(()=>{});
+      if(partial.dreConfigs) sbSaveConfig("dreConfigs",{...prev.dreConfigs,...partial.dreConfigs}).catch(()=>{});
+      if(partial.mensagens) sbSaveConfig("mensagens",{...MSG_DEFAULT,...prev.mensagens,...partial.mensagens}).catch(()=>{});
+      if(partial.cupons) sbSaveConfig("cupons",partial.cupons).catch(()=>{});
+      if(partial.limiteDisparoDiario!==undefined) sbSaveConfig("limiteDisparoDiario",partial.limiteDisparoDiario).catch(()=>{});
       return next;
     });
   }, []);
@@ -4266,17 +4332,45 @@ export default function Home() {
     if(DEMO_MODE){setSbLoading(false);return;}
     (async()=>{
       try{
-        const [sbSessoes,sbBase]=await Promise.all([sbLoadSessoes(),sbLoadBaseMestre()]);
+        const [sbSessoes,sbBase,sbDisparos,sbConfigs]=await Promise.all([
+          sbLoadSessoes(),sbLoadBaseMestre(),sbLoadDisparos(),sbLoadConfigs()
+        ]);
         if(sbSessoes.length>0) setSessions(sbSessoes);
-        if(Object.keys(sbBase).length>0){
-          setAppState(prev=>{
-            const next={...prev,baseMestre:{...sbBase,...prev.baseMestre}};
-            saveState(next);return next;
-          });
+        setAppState(prev=>{
+          let next={...prev};
+          // Base Mestre
+          if(Object.keys(sbBase).length>0)
+            next={...next,baseMestre:{...sbBase,...prev.baseMestre}};
+          // Disparos — mescla SB com localStorage (SB tem prioridade)
+          if(sbDisparos.length>0){
+            const localNomes=new Set(prev.disparos.map(d=>d.ts));
+            const novos=sbDisparos.filter(d=>!localNomes.has(d.ts));
+            next={...next,disparos:[...novos,...prev.disparos].slice(0,1000)};
+          }
+          // Configs do Supabase
+          if(sbConfigs.metas) next={...next,metas:sbConfigs.metas as AppState["metas"]};
+          if(sbConfigs.dreConfigs) next={...next,dreConfigs:sbConfigs.dreConfigs as AppState["dreConfigs"]};
+          if(sbConfigs.mensagens) next={...next,mensagens:{...MSG_DEFAULT,...sbConfigs.mensagens as AppState["mensagens"]}};
+          if(sbConfigs.cupons) next={...next,cupons:sbConfigs.cupons as AppState["cupons"]};
+          if(sbConfigs.limiteDisparoDiario) next={...next,limiteDisparoDiario:sbConfigs.limiteDisparoDiario as number};
+          saveState(next);
+          return next;
+        });
+        // Migração automática: disparos do localStorage → Supabase (só uma vez)
+        const migKey="hertzgo_disparos_migrated_v1";
+        if(!localStorage.getItem(migKey)){
+          const localDisparos=JSON.parse(localStorage.getItem("hertzgo_vision_v4")||"{}").disparos||[];
+          if(localDisparos.length>0){
+            sbSaveDisparos(localDisparos).then(()=>{
+              localStorage.setItem(migKey,"1");
+              console.log(`✅ Migrados ${localDisparos.length} disparos para Supabase`);
+            }).catch(()=>{});
+          } else {
+            localStorage.setItem(migKey,"1");
+          }
         }
-        setSbStatus("ok");
-      }catch(e){console.error("SB load:",e);setSbStatus("err");}
-      finally{setSbLoading(false);}
+        setSbLoading(false);
+      }catch(e){console.error("SB load error:",e);setSbLoading(false);}
     })();
   },[]);
 
