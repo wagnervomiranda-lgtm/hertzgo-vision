@@ -977,6 +977,66 @@ function UploadScreen({onFile}:{onFile:(s:Session[])=>void}){
 }
 
 // ─── BRIEFING DIÁRIO ─────────────────────────────────────────────────────────
+// ─── FILA DO DIA PROGRESS ────────────────────────────────────────────────────
+function FilaDiaProgress({appState,limite,acoesAtivas,onIrParaAcoes,T}:{
+  appState:AppState;limite:number;acoesAtivas:{icon:string;texto:string;tipo:string;cor:string}[];
+  onIrParaAcoes?:()=>void;T:Record<string,string>;
+}){
+  const[openLog,setOpenLog]=useState(false);
+  const disparosHoje=(appState.disparos||[]).filter(d=>(Date.now()-new Date(d.ts).getTime())<86400000);
+  const enviados=disparosHoje.filter(d=>d.status==="ok").length;
+  const pct=Math.min(100,Math.round(enviados/limite*100));
+  const corPct=pct>=80?T.green:pct>=40?T.amber:T.text2;
+  return(
+    <div style={{padding:"12px 16px",borderTop:`1px solid ${T.border}`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+        <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const}}>📋 Fila do Dia</div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontFamily:T.mono,fontSize:11,fontWeight:700,color:corPct}}>{enviados}/{limite}</span>
+          {onIrParaAcoes&&enviados<limite&&(
+            <button onClick={onIrParaAcoes} style={{padding:"3px 10px",borderRadius:6,border:`1px solid ${T.green}40`,background:`${T.green}10`,color:T.green,fontFamily:T.mono,fontSize:10,cursor:"pointer"}}>📤 Disparar →</button>
+          )}
+        </div>
+      </div>
+      <div style={{height:6,background:T.bg3,borderRadius:3,overflow:"hidden",marginBottom:8}}>
+        <div style={{height:"100%",width:`${pct}%`,background:corPct,borderRadius:3,transition:"width .3s"}}/>
+      </div>
+      <div style={{display:"flex",gap:16,marginBottom:enviados>0?8:0}}>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.green}}>✅ {enviados} enviadas</span>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.amber}}>⏳ {Math.max(0,limite-enviados)} pendentes</span>
+        {acoesAtivas.length>0&&<span style={{fontFamily:T.mono,fontSize:10,color:T.red}}>⚡ {acoesAtivas.length} alertas</span>}
+      </div>
+      {enviados>0&&(
+        <div>
+          <button onClick={()=>setOpenLog(o=>!o)} style={{fontFamily:T.mono,fontSize:9,color:T.text3,background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openLog?8:0}}>
+            {openLog?"▲ ocultar histórico":`▼ ver ${enviados} disparo${enviados>1?"s":""} de hoje`}
+          </button>
+          {openLog&&(
+            <div style={{display:"flex",flexDirection:"column" as const,gap:4,maxHeight:160,overflowY:"auto" as const}}>
+              {disparosHoje.slice(0,20).map((d,i)=>{
+                const hora=new Date(d.ts).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+                const ok=d.status==="ok";
+                return(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontFamily:T.mono,fontSize:10,color:T.text2}}>
+                    <span style={{color:T.text3,flexShrink:0}}>{hora}</span>
+                    <span style={{color:ok?T.green:T.red,flexShrink:0}}>{ok?"✅":"❌"}</span>
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{d.nome}</span>
+                    <span style={{color:T.text3,flexShrink:0,fontSize:9}}>{d.msgId}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {enviados===0&&acoesAtivas.length===0&&(
+        <div style={{fontFamily:T.mono,fontSize:10,color:T.green}}>✅ Operação normalizada</div>
+      )}
+    </div>
+  );
+}
+
+
 function BriefingDiario({sessions,appState,meta,isMobile,onIrParaAcoes}:{
   sessions:Session[];appState:AppState;meta:number;isMobile:boolean;onIrParaAcoes?:()=>void;
 }){
@@ -1204,27 +1264,9 @@ function BriefingDiario({sessions,appState,meta,isMobile,onIrParaAcoes}:{
               </table>
             </div>
           </div>
-          {/* USUÁRIOS EM ATENÇÃO — disparo rápido */}
-          <UsuariosAtencaoCard motoristasRisco={motoristasRisco} novosHoje={novosHoje} appState={appState} sessions={sessions} isMobile={isMobile} vipScores2={vipScores2} trunc={trunc} T={T}/>
-          {/* AÇÕES */}
-          {acoesAtivas.length>0?(
-            <div style={{padding:"12px 16px"}}>
-              <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,letterSpacing:"0.15em",textTransform:"uppercase" as const,marginBottom:8}}>Ações de Hoje</div>
-              <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
-                {acoesAtivas.map((a,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:T.bg2,borderRadius:8,border:`1px solid ${a.cor}20`,gap:10}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flex:1}}>
-                      <span style={{fontSize:14,flexShrink:0}}>{a.icon}</span>
-                      <span style={{fontFamily:T.mono,fontSize:11,color:a.tipo==="op"?T.amber:a.tipo==="crm"?T.red:T.text2,lineHeight:1.4}}>{a.texto}</span>
-                    </div>
-                    <button onClick={()=>resolverAcao(acoes.indexOf(a))} style={{padding:"4px 10px",borderRadius:6,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"rgba(255,255,255,0.05)",border:`1px solid ${T.border}`,color:T.text3,flexShrink:0,whiteSpace:"nowrap" as const}}>✓ Ok</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ):(
-            <div style={{padding:"14px 16px",textAlign:"center" as const,fontFamily:T.mono,fontSize:11,color:T.green}}>✅ Nenhuma ação pendente — operação normalizada</div>
-          )}
+          {/* USUÁRIOS EM ATENÇÃO — removido, ver Fila do Dia em Ações */}
+          {/* FILA DO DIA — PROGRESSO */}
+          <FilaDiaProgress appState={appState} limite={appState.limiteDisparoDiario||30} acoesAtivas={acoesAtivas} onIrParaAcoes={onIrParaAcoes} T={T}/>
         </div>
       )}
     </div>
