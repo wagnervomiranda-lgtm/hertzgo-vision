@@ -2160,6 +2160,29 @@ function ImportarHistoricoPanel({sessions,localDisparos,onSaveDisparos,showToast
 }
 
 
+// ─── HISTÓRICO & REGISTROS (colapsável) ──────────────────────────────────────
+function HistoricoRegistrosPanel({children,T}:{children:React.ReactNode;T:Record<string,string>}){
+  const[open,setOpen]=useState(false);
+  return(
+    <div style={{marginBottom:16}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{
+        display:"flex",alignItems:"center",justifyContent:"space-between",
+        width:"100%",padding:"10px 16px",background:T.bg2,
+        border:`1px solid ${T.border}`,borderRadius:open?"10px 10px 0 0":10,cursor:"pointer",
+      }}>
+        <span style={{fontFamily:T.mono,fontSize:11,color:T.text2,fontWeight:600}}>📋 Histórico & Registros</span>
+        <span style={{fontFamily:T.mono,fontSize:10,color:T.text3}}>{open?"▲":"▼"}</span>
+      </button>
+      {open&&(
+        <div style={{border:`1px solid ${T.border}`,borderTop:"none",borderRadius:"0 0 10px 10px",overflow:"hidden"}}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function TabAcoes({sessions,appState,onSaveDisparos,onSaveState}:{sessions:Session[];appState:AppState;onSaveDisparos:(d:AppState["disparos"])=>void;onSaveState:(p:Partial<AppState>)=>void}){
   const isMobile=useIsMobile();
   const ok=sessions.filter(s=>!s.cancelled&&s.energy>0);
@@ -2403,108 +2426,6 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
       {/* ── TOAST ──────────────────────────────────────────────────── */}
       {toastMsg&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.green,color:T.bg,padding:"10px 20px",borderRadius:12,fontFamily:T.mono,fontSize:12,fontWeight:700,zIndex:2000,boxShadow:"0 4px 20px rgba(0,200,160,0.4)"}}>{toastMsg}</div>}
 
-      {/* ── FILA DO DIA ─────────────────────────────────────────────── */}
-      <SectionLabel>📋 Fila do Dia — {limite30} mensagens manuais</SectionLabel>
-      <Panel style={{marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12}}>
-          <div style={{display:"flex",gap:16}}>
-            <span style={{fontFamily:T.mono,fontSize:11,color:T.green,fontWeight:700}}>{filaDoDia.length} prontos</span>
-            <span style={{fontFamily:T.mono,fontSize:11,color:T.amber}}>{manuaisHoje} manuais hoje</span>
-            <span style={{fontFamily:T.mono,fontSize:11,color:T.text3}}>{semTel30.length} sem tel</span>
-            {novosHoje.length>0&&<span style={{fontFamily:T.mono,fontSize:11,color:T.teal,fontWeight:700}}>🆕 {novosHoje.length} novos hoje!</span>}
-          </div>
-          <div style={{display:"flex",gap:6}}>
-            <button onClick={incrementarManual} style={{padding:"5px 12px",borderRadius:8,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"rgba(0,200,160,0.1)",border:"1px solid rgba(0,200,160,0.3)",color:T.green}}>+1 Manual</button>
-            <button onClick={resetarManuais} style={{padding:"5px 12px",borderRadius:8,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"transparent",border:`1px solid ${T.border}`,color:T.text3}}>Zerar</button>
-          </div>
-        </div>
-        {filaDoDia.length===0?<div style={{textAlign:"center",padding:"16px",fontFamily:T.mono,fontSize:11,color:T.text3}}>Todos contatados ou limite atingido ✅</div>:
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          {filaDoDia.map((item,i)=>{
-            const ov=appState.userOverrides[item.nome.toLowerCase()];
-            return(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:T.bg2,borderRadius:8,border:`1px solid ${T.border}`,flexWrap:"wrap"}}>
-                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3,minWidth:20}}>{i+1}</span>
-                <span style={{fontSize:11,color:item.segmento==="Motorista"?T.red:item.segmento==="Heavy"?T.amber:T.text,fontWeight:600,flex:1,minWidth:120}}>{item.nome.split(" ").slice(0,2).join(" ")}</span>
-                <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{item.hubNomeStr}</span>
-                <span style={{fontFamily:T.mono,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:T.text2}}>{item.msgId}</span>
-                <span style={{fontFamily:T.mono,fontSize:9,color:item.diasSemRecarga>20?T.red:item.diasSemRecarga>10?T.amber:T.green}}>{item.diasSemRecarga}d</span>
-                {ov?.precoVip&&<span style={{fontFamily:T.mono,fontSize:9,color:T.teal,fontWeight:700}}>VIP R${ov.precoVip.toFixed(2)}</span>}
-                {item.telefone&&<span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{item.telefone}</span>}
-              </div>
-            );
-          })}
-        </div>}
-      </Panel>
-
-      {/* ── IMPORTAR HISTÓRICO ──────────────────────────────────────── */}
-      <SectionLabel>📋 Importar Histórico de Contatos</SectionLabel>
-      <Panel style={{marginBottom:24}}>
-        <div style={{fontFamily:T.mono,fontSize:11,color:T.text2,marginBottom:14,lineHeight:1.7}}>
-          Marque os usuários já contactados fora do sistema. Isso evita disparos duplicados.
-        </div>
-        <ImportarHistoricoPanel sessions={sessions} localDisparos={localDisparos} onSaveDisparos={onSaveDisparos} showToast={showToast} T={T} trunc={trunc} appState={appState}/>
-      </Panel>
-
-      {/* ── REGISTRAR RESPOSTA MANUAL ──────────────────────────────── */}
-      <SectionLabel>✍️ Registrar Resposta Manual</SectionLabel>
-      <Panel style={{marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr 1fr auto",gap:8,alignItems:"end"}}>
-          <div>
-            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:4}}>NOME DO CLIENTE</div>
-            <input value={regBusca} onChange={e=>setRegBusca(e.target.value)} placeholder="ex: Nelson Almeida de Jesus" style={{width:"100%",padding:"8px 10px",background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontFamily:T.mono,fontSize:11,boxSizing:"border-box" as const}}/>
-          </div>
-          <div>
-            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:4}}>RESPOSTA</div>
-            <select value={regResp} onChange={e=>setRegResp(e.target.value as "1"|"2"|"")} style={{width:"100%",padding:"8px 10px",background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontFamily:T.mono,fontSize:11}}>
-              <option value="">—</option>
-              <option value="1">1 — Motorista</option>
-              <option value="2">2 — Não motorista</option>
-            </select>
-          </div>
-          <div>
-            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3,marginBottom:4}}>PREÇO VIP (opcional)</div>
-            <input value={regPreco} onChange={e=>setRegPreco(e.target.value)} placeholder="ex: 1,29" style={{width:"100%",padding:"8px 10px",background:T.bg2,border:`1px solid ${T.border}`,borderRadius:8,color:T.text,fontFamily:T.mono,fontSize:11,boxSizing:"border-box" as const}}/>
-          </div>
-          <button onClick={registrarManual} style={{padding:"8px 16px",borderRadius:8,background:T.green,color:T.bg,border:"none",fontFamily:T.mono,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap" as const}}>Registrar</button>
-        </div>
-        {regMsg&&<div style={{marginTop:8,fontFamily:T.mono,fontSize:11,color:regMsg.startsWith("✅")?T.green:T.red}}>{regMsg}</div>}
-      </Panel>
-
-      {/* ── PAINEL AÇÃO 19/03 ────────────────────────────────────────── */}
-      {contatadosAcao.length>0&&<>
-      <SectionLabel>📊 Ação {labelAcao} — Resultados</SectionLabel>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
-        {[
-          {l:"Contatados",v:contatadosAcao.length,c:T.text,s:"total da ação"},
-          {l:"Voltaram",v:voltaramAcao.length,c:T.green,s:`${contatadosAcao.length>0?(voltaramAcao.length/contatadosAcao.length*100).toFixed(0):0}% de retorno`},
-          {l:"Pagando VIP",v:pagandoVip.length,c:T.teal,s:"preço combinado"},
-        ].map((k,i)=>(
-          <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.c}}/>
-            <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.l}</div>
-            <div style={{fontFamily:T.sans,fontSize:28,fontWeight:800,color:k.c,marginBottom:4}}>{k.v}</div>
-            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{k.s}</div>
-          </div>
-        ))}
-      </div>
-      {voltaramAcao.length>0&&<Panel style={{marginBottom:16}}>
-        <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.green,marginBottom:8}}>✅ Voltaram após contato</div>
-        {voltaramAcao.slice(0,8).map((d,i)=>{
-          const sessApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>new Date(d.ts).getTime());
-          const rec=sessApos.reduce((a,s)=>a+s.value,0);
-          const dias=sessApos.length>0?Math.round((sessApos[0].date.getTime()-new Date(d.ts).getTime())/86400000):0;
-          return(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 8px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap",gap:4}}>
-            <span style={{fontFamily:T.sans,fontSize:11,color:T.text}}>{d.nome.split(" ").slice(0,2).join(" ")}</span>
-            <div style={{display:"flex",gap:12}}>
-              <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>voltou em {dias}d</span>
-              <span style={{fontFamily:T.mono,fontSize:10,color:T.green,fontWeight:700}}>R${rec.toFixed(0)}</span>
-            </div>
-          </div>);
-        })}
-      </Panel>}
-      </>}
-
       {/* MODAL PREVIEW — adaptado para mobile */}
       {preview&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0}}>
@@ -2565,6 +2486,74 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
         <KpiCard label="Enviados 30d" value={`${localDisparos.filter(d=>d.status==="ok"&&(Date.now()-new Date(d.ts).getTime())<30*86400000).length}`} sub="confirmados" accent={T.amber} small/>
         <KpiCard label="Total Enviado" value={`${localDisparos.filter(d=>d.status==="ok").length}`} sub="Z-API" accent={T.green} small/>
       </div>
+
+      {/* ── PAINEL AÇÃO 19/03 ────────────────────────────────────────── */}
+      {contatadosAcao.length>0&&<>
+      <SectionLabel>📊 Ação {labelAcao} — Resultados</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
+        {[
+          {l:"Contatados",v:contatadosAcao.length,c:T.text,s:"total da ação"},
+          {l:"Voltaram",v:voltaramAcao.length,c:T.green,s:`${contatadosAcao.length>0?(voltaramAcao.length/contatadosAcao.length*100).toFixed(0):0}% de retorno`},
+          {l:"Pagando VIP",v:pagandoVip.length,c:T.teal,s:"preço combinado"},
+        ].map((k,i)=>(
+          <div key={i} style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:k.c}}/>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text2,textTransform:"uppercase" as const,letterSpacing:"0.1em",marginBottom:6}}>{k.l}</div>
+            <div style={{fontFamily:T.sans,fontSize:28,fontWeight:800,color:k.c,marginBottom:4}}>{k.v}</div>
+            <div style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{k.s}</div>
+          </div>
+        ))}
+      </div>
+      {voltaramAcao.length>0&&<Panel style={{marginBottom:16}}>
+        <div style={{fontFamily:T.sans,fontSize:12,fontWeight:700,color:T.green,marginBottom:8}}>✅ Voltaram após contato</div>
+        {voltaramAcao.slice(0,8).map((d,i)=>{
+          const sessApos=ok.filter(s=>s.user===d.nome&&s.date.getTime()>new Date(d.ts).getTime());
+          const rec=sessApos.reduce((a,s)=>a+s.value,0);
+          const dias=sessApos.length>0?Math.round((sessApos[0].date.getTime()-new Date(d.ts).getTime())/86400000):0;
+          return(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 8px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap",gap:4}}>
+            <span style={{fontFamily:T.sans,fontSize:11,color:T.text}}>{d.nome.split(" ").slice(0,2).join(" ")}</span>
+            <div style={{display:"flex",gap:12}}>
+              <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>voltou em {dias}d</span>
+              <span style={{fontFamily:T.mono,fontSize:10,color:T.green,fontWeight:700}}>R${rec.toFixed(0)}</span>
+            </div>
+          </div>);
+        })}
+      </Panel>}
+      </>}
+
+      {/* ── FILA DO DIA ─────────────────────────────────────────────── */}
+      <SectionLabel>📋 Fila do Dia — {limite30} mensagens manuais</SectionLabel>
+      <Panel style={{marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:12}}>
+          <div style={{display:"flex",gap:16}}>
+            <span style={{fontFamily:T.mono,fontSize:11,color:T.green,fontWeight:700}}>{filaDoDia.length} prontos</span>
+            <span style={{fontFamily:T.mono,fontSize:11,color:T.amber}}>{manuaisHoje} manuais hoje</span>
+            <span style={{fontFamily:T.mono,fontSize:11,color:T.text3}}>{semTel30.length} sem tel</span>
+            {novosHoje.length>0&&<span style={{fontFamily:T.mono,fontSize:11,color:T.teal,fontWeight:700}}>🆕 {novosHoje.length} novos hoje!</span>}
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={incrementarManual} style={{padding:"5px 12px",borderRadius:8,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"rgba(0,200,160,0.1)",border:"1px solid rgba(0,200,160,0.3)",color:T.green}}>+1 Manual</button>
+            <button onClick={resetarManuais} style={{padding:"5px 12px",borderRadius:8,fontFamily:T.mono,fontSize:10,cursor:"pointer",background:"transparent",border:`1px solid ${T.border}`,color:T.text3}}>Zerar</button>
+          </div>
+        </div>
+        {filaDoDia.length===0?<div style={{textAlign:"center",padding:"16px",fontFamily:T.mono,fontSize:11,color:T.text3}}>Todos contatados ou limite atingido ✅</div>:
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          {filaDoDia.map((item,i)=>{
+            const ov=appState.userOverrides[item.nome.toLowerCase()];
+            return(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:T.bg2,borderRadius:8,border:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+                <span style={{fontFamily:T.mono,fontSize:10,color:T.text3,minWidth:20}}>{i+1}</span>
+                <span style={{fontSize:11,color:item.segmento==="Motorista"?T.red:item.segmento==="Heavy"?T.amber:T.text,fontWeight:600,flex:1,minWidth:120}}>{item.nome.split(" ").slice(0,2).join(" ")}</span>
+                <span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{item.hubNomeStr}</span>
+                <span style={{fontFamily:T.mono,fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:T.text2}}>{item.msgId}</span>
+                <span style={{fontFamily:T.mono,fontSize:9,color:item.diasSemRecarga>20?T.red:item.diasSemRecarga>10?T.amber:T.green}}>{item.diasSemRecarga}d</span>
+                {ov?.precoVip&&<span style={{fontFamily:T.mono,fontSize:9,color:T.teal,fontWeight:700}}>VIP R${ov.precoVip.toFixed(2)}</span>}
+                {item.telefone&&<span style={{fontFamily:T.mono,fontSize:9,color:T.text3}}>{item.telefone}</span>}
+              </div>
+            );
+          })}
+        </div>}
+      </Panel>
 
       {/* FILA DO DIA — ALGORITMO INTELIGENTE */}
       <FilaDoDia sessions={sessions} appState={appState} localDisparos={localDisparos} getMsgTemplate={getMsgTemplate} abrirPreview={abrirPreview} enviarUm={enviarUm} onSaveState={onSaveState} isMobile={isMobile} sending={sending}/>
@@ -2631,6 +2620,9 @@ Intervalo: ${appState.metas["crm_intervalo_min"]||15}–${appState.metas["crm_in
           </div>
         );
       })}
+      {/* ── HISTÓRICO & REGISTROS (colapsável) ─────────────────────── */}
+      <HistoricoRegistrosPanel T={T}>
+      </HistoricoRegistrosPanel>
       {localDisparos.length>0&&(<><SectionLabel>Histórico</SectionLabel><Panel style={{maxHeight:180,overflowY:"auto"}}>{localDisparos.slice(0,50).map((l,i)=>(<div key={i} style={{display:"flex",gap:8,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)",fontFamily:T.mono,fontSize:10,flexWrap:"wrap"}}><span style={{color:T.text3}}>{new Date(l.ts).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span><span style={{color:l.status==="ok"?T.green:T.red}}>{l.status==="ok"?"✅":"❌"}</span><span style={{color:T.text}}>{trunc(l.nome,isMobile?16:24)}</span><span style={{color:T.text3,fontSize:9}}>{l.msgId}</span></div>))}</Panel></>)}
     </div>
   );
