@@ -4344,7 +4344,7 @@ export default function Home() {
           // Disparos — mescla SB com localStorage (SB tem prioridade)
           if(sbDisparos.length>0){
             const localNomes=new Set(prev.disparos.map(d=>d.ts));
-            const novos=sbDisparos.filter(d=>!localNomes.has(d.ts));
+            const novos=sbDisparos.filter(d=>!localNomes.has(d.ts)).map(d=>({...d,status:(d.status==="err"?"err":"ok") as "ok"|"err"}));
             next={...next,disparos:[...novos,...prev.disparos].slice(0,1000)};
           }
           // Configs do Supabase
